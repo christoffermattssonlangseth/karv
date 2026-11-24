@@ -1,0 +1,15 @@
+# macOS
+.DS_Store
+
+# Xcode
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+build/
+
+# SwiftPM
+.build/
+.swiftpm/
+Packages/KarvCore/.build/
+Packages/KarvCore/.swiftpm/

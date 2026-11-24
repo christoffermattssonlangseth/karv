@@ -1,0 +1,639 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		19FE29DCFB00AB4E59E29381 /* KarvCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8BAF97062EF5256BF462CE07 /* KarvCore */; };
+		260F40BB16385796C9C04624 /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F65FAB30E8BC97140C9488A /* DesignSystem.swift */; };
+		2925AC689890F275D67397E1 /* LocalBonjourSyncServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B652BDB546ADDE11939DB2B /* LocalBonjourSyncServer.swift */; };
+		2F6A99F602B673F9B0C975D6 /* TrendsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9DA84E70E78104771B3DB0E /* TrendsView.swift */; };
+		4BF3BA682A2DBC9B3A6C9374 /* KarvCore in Frameworks */ = {isa = PBXBuildFile; productRef = 663720CB0FBBF9693B50B107 /* KarvCore */; };
+		53D97B0397CA6F0A1B1B35E7 /* KarvCore in Frameworks */ = {isa = PBXBuildFile; productRef = 39C53A70FDE1E4AC9D90586B /* KarvCore */; };
+		715FA858D8E0E33D5A9643C7 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2838B690764964F35D3B6C51 /* DashboardView.swift */; };
+		754B88150AC34756B0D03E0C /* KarvWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E6A563D58D19C8DF212420 /* KarvWidget.swift */; };
+		75962DF81AF29AD5F008ABBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */; };
+		77DE89E84B28C22A4545F041 /* MacBonjourSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */; };
+		8B2A3054E05015E4B1F98F84 /* LocalUsageCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */; };
+		9392FF2972C2ED2917DB6A37 /* KarvWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6874189EB03554A2F613926 /* KarvWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		A8BC618DDA61F6C229128977 /* ProviderDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */; };
+		C18C0E9F71E67FA0CC496637 /* ProviderWebAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71EC888C0C12181AADE53A7C /* ProviderWebAuthSheet.swift */; };
+		E089751689884F11E170A002 /* KarvApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38DC5039E76E8CE51380C80 /* KarvApp.swift */; };
+		EC65EDA4259CEC5F4D14D1F8 /* KarvMacApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39402182AEDB32E93A6B142E /* KarvMacApp.swift */; };
+		F97506518881A3E023D8BECE /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 083B2131A686B876E131DC5F /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		5CCE4483397A8974042719CC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 76544C8D646B6F3300A41D81 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E3BE703E724A8DF74022794E;
+			remoteInfo = KarvWidget;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		FC16E81F4C0CDB69231690D2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				9392FF2972C2ED2917DB6A37 /* KarvWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		04F86DC548E85C2E7A368D0E /* KarvCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = KarvCore; path = Packages/KarvCore; sourceTree = SOURCE_ROOT; };
+		050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderDetailSheet.swift; sourceTree = "<group>"; };
+		083B2131A686B876E131DC5F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		0F65FAB30E8BC97140C9488A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
+		215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBonjourSyncClient.swift; sourceTree = "<group>"; };
+		2838B690764964F35D3B6C51 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		39402182AEDB32E93A6B142E /* KarvMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KarvMacApp.swift; sourceTree = "<group>"; };
+		477A5639E5E25FF9CC6FF576 /* Karv.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Karv.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		64E6A563D58D19C8DF212420 /* KarvWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KarvWidget.swift; sourceTree = "<group>"; };
+		71EC888C0C12181AADE53A7C /* ProviderWebAuthSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProviderWebAuthSheet.swift; sourceTree = "<group>"; };
+		7F6788164669E92E965C7749 /* KarvMac.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = KarvMac.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9B652BDB546ADDE11939DB2B /* LocalBonjourSyncServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalBonjourSyncServer.swift; sourceTree = "<group>"; };
+		A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalUsageCollector.swift; sourceTree = "<group>"; };
+		A9DA84E70E78104771B3DB0E /* TrendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrendsView.swift; sourceTree = "<group>"; };
+		B6874189EB03554A2F613926 /* KarvWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = KarvWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		E38DC5039E76E8CE51380C80 /* KarvApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KarvApp.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		21A92F26CE80531A43528DCD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				19FE29DCFB00AB4E59E29381 /* KarvCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		273C4316C488B4D1BE79BDBC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4BF3BA682A2DBC9B3A6C9374 /* KarvCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8EF742EE5271DBACCDD02861 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				53D97B0397CA6F0A1B1B35E7 /* KarvCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		464EB6E3923485E576C5774B = {
+			isa = PBXGroup;
+			children = (
+				F64EA946AF43E94D251132A7 /* Packages */,
+				B5B14413339A9EE352EE4C09 /* Resources */,
+				B18F6F815519729FE94398E0 /* Sources */,
+				83EB541A922FAB8C02EF9B28 /* Sources */,
+				DAD9F570D96FFCBFFFA38E8A /* Sources */,
+				69B43F231C953FA775939A29 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		69B43F231C953FA775939A29 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				477A5639E5E25FF9CC6FF576 /* Karv.app */,
+				7F6788164669E92E965C7749 /* KarvMac.app */,
+				B6874189EB03554A2F613926 /* KarvWidget.appex */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		83EB541A922FAB8C02EF9B28 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				39402182AEDB32E93A6B142E /* KarvMacApp.swift */,
+				9B652BDB546ADDE11939DB2B /* LocalBonjourSyncServer.swift */,
+				A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */,
+			);
+			name = Sources;
+			path = Apps/KarvMac/Sources;
+			sourceTree = "<group>";
+		};
+		B18F6F815519729FE94398E0 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				2838B690764964F35D3B6C51 /* DashboardView.swift */,
+				0F65FAB30E8BC97140C9488A /* DesignSystem.swift */,
+				E38DC5039E76E8CE51380C80 /* KarvApp.swift */,
+				215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */,
+				050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */,
+				71EC888C0C12181AADE53A7C /* ProviderWebAuthSheet.swift */,
+				CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */,
+				A9DA84E70E78104771B3DB0E /* TrendsView.swift */,
+			);
+			name = Sources;
+			path = Apps/KarvIOS/Sources;
+			sourceTree = "<group>";
+		};
+		B5B14413339A9EE352EE4C09 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				083B2131A686B876E131DC5F /* Assets.xcassets */,
+			);
+			name = Resources;
+			path = Apps/KarvIOS/Resources;
+			sourceTree = "<group>";
+		};
+		DAD9F570D96FFCBFFFA38E8A /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				64E6A563D58D19C8DF212420 /* KarvWidget.swift */,
+			);
+			name = Sources;
+			path = Apps/KarvWidget/Sources;
+			sourceTree = "<group>";
+		};
+		F64EA946AF43E94D251132A7 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				04F86DC548E85C2E7A368D0E /* KarvCore */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		265CFB64CFD9F8917282BEAD /* Karv */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 735E4B2937B4F15402D8B6B8 /* Build configuration list for PBXNativeTarget "Karv" */;
+			buildPhases = (
+				324DCB43DAB2792A88924CDF /* Sources */,
+				AE23CAD77124E648E64502E3 /* Resources */,
+				21A92F26CE80531A43528DCD /* Frameworks */,
+				FC16E81F4C0CDB69231690D2 /* Embed Foundation Extensions */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				30BD76BCFC777194C02AD926 /* PBXTargetDependency */,
+			);
+			name = Karv;
+			packageProductDependencies = (
+				8BAF97062EF5256BF462CE07 /* KarvCore */,
+			);
+			productName = Karv;
+			productReference = 477A5639E5E25FF9CC6FF576 /* Karv.app */;
+			productType = "com.apple.product-type.application";
+		};
+		35AA0214BA1ED4AE494F612E /* KarvMac */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9B91728F777578CC46CCCF46 /* Build configuration list for PBXNativeTarget "KarvMac" */;
+			buildPhases = (
+				2BC6C0188CEBB3995AF9ED0F /* Sources */,
+				273C4316C488B4D1BE79BDBC /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KarvMac;
+			packageProductDependencies = (
+				663720CB0FBBF9693B50B107 /* KarvCore */,
+			);
+			productName = KarvMac;
+			productReference = 7F6788164669E92E965C7749 /* KarvMac.app */;
+			productType = "com.apple.product-type.application";
+		};
+		E3BE703E724A8DF74022794E /* KarvWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9C33D1F69594619939E67FA2 /* Build configuration list for PBXNativeTarget "KarvWidget" */;
+			buildPhases = (
+				22EF49F5E04B396B26912EAB /* Sources */,
+				8EF742EE5271DBACCDD02861 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = KarvWidget;
+			packageProductDependencies = (
+				39C53A70FDE1E4AC9D90586B /* KarvCore */,
+			);
+			productName = KarvWidget;
+			productReference = B6874189EB03554A2F613926 /* KarvWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		76544C8D646B6F3300A41D81 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					265CFB64CFD9F8917282BEAD = {
+						DevelopmentTeam = 7R6QL53THM;
+						ProvisioningStyle = Automatic;
+					};
+					35AA0214BA1ED4AE494F612E = {
+						DevelopmentTeam = 7R6QL53THM;
+						ProvisioningStyle = Automatic;
+					};
+					E3BE703E724A8DF74022794E = {
+						DevelopmentTeam = 7R6QL53THM;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 0D55D3FD1DF909419D5B8E73 /* Build configuration list for PBXProject "Karv" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 464EB6E3923485E576C5774B;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				7C9D014D830DE8F9AE2376B1 /* XCLocalSwiftPackageReference "Packages/KarvCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 69B43F231C953FA775939A29 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				265CFB64CFD9F8917282BEAD /* Karv */,
+				E3BE703E724A8DF74022794E /* KarvWidget */,
+				35AA0214BA1ED4AE494F612E /* KarvMac */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AE23CAD77124E648E64502E3 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F97506518881A3E023D8BECE /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		22EF49F5E04B396B26912EAB /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				754B88150AC34756B0D03E0C /* KarvWidget.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2BC6C0188CEBB3995AF9ED0F /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EC65EDA4259CEC5F4D14D1F8 /* KarvMacApp.swift in Sources */,
+				2925AC689890F275D67397E1 /* LocalBonjourSyncServer.swift in Sources */,
+				8B2A3054E05015E4B1F98F84 /* LocalUsageCollector.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		324DCB43DAB2792A88924CDF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				715FA858D8E0E33D5A9643C7 /* DashboardView.swift in Sources */,
+				260F40BB16385796C9C04624 /* DesignSystem.swift in Sources */,
+				E089751689884F11E170A002 /* KarvApp.swift in Sources */,
+				77DE89E84B28C22A4545F041 /* MacBonjourSyncClient.swift in Sources */,
+				A8BC618DDA61F6C229128977 /* ProviderDetailSheet.swift in Sources */,
+				C18C0E9F71E67FA0CC496637 /* ProviderWebAuthSheet.swift in Sources */,
+				75962DF81AF29AD5F008ABBA /* SettingsView.swift in Sources */,
+				2F6A99F602B673F9B0C975D6 /* TrendsView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		30BD76BCFC777194C02AD926 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E3BE703E724A8DF74022794E /* KarvWidget */;
+			targetProxy = 5CCE4483397A8974042719CC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		0FF8E3F6AAFE0ACB7A5FD5D6 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvWidget/KarvWidget.entitlements;
+				INFOPLIST_FILE = Apps/KarvWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.ios.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		13CB764E0D170A4CF0538BE0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvMac/KarvMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = KarvMac;
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.mac;
+				SDKROOT = macosx;
+			};
+			name = Debug;
+		};
+		618208E610CC78318109FFDF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 7R6QL53THM;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		706322D2532A0360F4ABC6A8 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 7R6QL53THM;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MARKETING_VERSION = 1.0.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		B38FE3064ACE893E84038D18 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvMac/KarvMac.entitlements;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = KarvMac;
+				INFOPLIST_KEY_LSUIElement = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.mac;
+				SDKROOT = macosx;
+			};
+			name = Release;
+		};
+		D372A4A8D4F212708C613E36 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvIOS/Karv.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Apps/KarvIOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		D550649BD5D59A2B633C3317 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvIOS/Karv.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Apps/KarvIOS/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.ios;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		F4D2AFB7A91AF034DE45E9DB /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Apps/KarvWidget/KarvWidget.entitlements;
+				INFOPLIST_FILE = Apps/KarvWidget/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.cml.karv.ios.widget;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		0D55D3FD1DF909419D5B8E73 /* Build configuration list for PBXProject "Karv" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				618208E610CC78318109FFDF /* Debug */,
+				706322D2532A0360F4ABC6A8 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		735E4B2937B4F15402D8B6B8 /* Build configuration list for PBXNativeTarget "Karv" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D550649BD5D59A2B633C3317 /* Debug */,
+				D372A4A8D4F212708C613E36 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9B91728F777578CC46CCCF46 /* Build configuration list for PBXNativeTarget "KarvMac" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				13CB764E0D170A4CF0538BE0 /* Debug */,
+				B38FE3064ACE893E84038D18 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9C33D1F69594619939E67FA2 /* Build configuration list for PBXNativeTarget "KarvWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F4D2AFB7A91AF034DE45E9DB /* Debug */,
+				0FF8E3F6AAFE0ACB7A5FD5D6 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		7C9D014D830DE8F9AE2376B1 /* XCLocalSwiftPackageReference "Packages/KarvCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/KarvCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		39C53A70FDE1E4AC9D90586B /* KarvCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KarvCore;
+		};
+		663720CB0FBBF9693B50B107 /* KarvCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KarvCore;
+		};
+		8BAF97062EF5256BF462CE07 /* KarvCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = KarvCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 76544C8D646B6F3300A41D81 /* Project object */;
+}
