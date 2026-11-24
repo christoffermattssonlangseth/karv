@@ -1,5 +1,6 @@
 import WidgetKit
 import SwiftUI
+import ActivityKit
 import KarvCore
 
 struct KarvWidgetEntry: TimelineEntry {
@@ -491,6 +492,103 @@ struct KarvWidgetEntryView: View {
 struct KarvWidgetBundle: WidgetBundle {
     var body: some Widget {
         KarvUsageWidget()
+        KarvResetLiveActivity()
+    }
+}
+
+struct KarvResetLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: KarvResetActivityAttributes.self) { context in
+            let provider = AIProvider(rawValue: context.attributes.providerRawValue) ?? .claude
+            let accent = provider.accentColor
+            let now = Date()
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .center) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(accent)
+                            .frame(width: 8, height: 8)
+                        Text(context.attributes.providerName)
+                            .font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(.white)
+                        Text(context.attributes.planName.uppercased())
+                            .font(.system(size: 9, weight: .bold, design: .monospaced))
+                            .foregroundStyle(accent)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(accent.opacity(0.18), in: Capsule())
+                    }
+
+                    Spacer()
+
+                    if context.state.resetsAt > now {
+                        HStack(spacing: 4) {
+                            Image(systemName: "clock")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.white.opacity(0.6))
+                            Text(timerInterval: now...context.state.resetsAt, countsDown: true)
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                        }
+                    } else {
+                        Text("Resetting")
+                            .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(AIProvider.codex.accentColor)
+                    }
+                }
+
+                HStack(spacing: 10) {
+                    Text(context.state.windowTitle)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.65))
+
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.14))
+                            Capsule()
+                                .fill(accent)
+                                .frame(width: max(6, geo.size.width * min(max(context.state.usedPercent, 0.02), 1.0)))
+                        }
+                    }
+                    .frame(height: 6)
+
+                    Text("\(KarvFormatting.percentString(context.state.usedPercent)) used")
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.85))
+                }
+            }
+            .padding(16)
+            .activityBackgroundTint(Color(red: 0.055, green: 0.055, blue: 0.067))
+            .activitySystemActionForegroundColor(.white)
+        } dynamicIsland: { context in
+            let provider = AIProvider(rawValue: context.attributes.providerRawValue) ?? .claude
+            return DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    Text(context.attributes.providerName)
+                        .font(.system(size: 14, weight: .bold))
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text("\(KarvFormatting.percentString(context.state.usedPercent))")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundStyle(provider.accentColor)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    if context.state.resetsAt > Date() {
+                        Text(timerInterval: Date()...context.state.resetsAt, countsDown: true)
+                            .font(.system(size: 13, design: .monospaced))
+                    }
+                }
+            } compactLeading: {
+                Circle().fill(provider.accentColor).frame(width: 8, height: 8)
+            } compactTrailing: {
+                Text(KarvFormatting.percentString(context.state.usedPercent))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+            } minimal: {
+                Circle().fill(provider.accentColor).frame(width: 8, height: 8)
+            }
+        }
     }
 }
 

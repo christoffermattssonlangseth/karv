@@ -17,16 +17,42 @@ struct KarvApp: App {
                 .tint(.white)
                 .task {
                     macSync.start(store: store)
+                    _ = await KarvNotificationScheduler.requestPermission()
                     await refreshDirectClaudeIfConfigured()
+                    KarvNotificationScheduler.scheduleAlerts(for: store.snapshot, preferences: store.preferences)
                 }
                 .onChange(of: scenePhase) { _, phase in
                     if phase == .active {
                         macSync.pullNow()
                         Task {
                             await refreshDirectClaudeIfConfigured()
+                            await LiveActivityManager.refreshActiveActivities(from: store.snapshot)
                         }
                     }
                 }
+                .onChange(of: store.snapshot) { _, updated in
+                    KarvNotificationScheduler.scheduleAlerts(for: updated, preferences: store.preferences)
+                    Task {
+                        await LiveActivityManager.refreshActiveActivities(from: updated)
+                    }
+                }
+                .onOpenURL { url in
+                    handleIncomingDeepLink(url)
+                }
+        }
+    }
+
+    private func handleIncomingDeepLink(_ url: URL) {
+        guard url.scheme?.lowercased() == "karv",
+              url.host?.lowercased() == "claude-token",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let token = components.queryItems?.first(where: { $0.name == "t" })?.value,
+              !token.isEmpty else {
+            return
+        }
+        KarvKeychain.saveClaudeToken(token)
+        Task {
+            await refreshDirectClaudeIfConfigured()
         }
     }
 

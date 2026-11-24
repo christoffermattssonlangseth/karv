@@ -336,6 +336,26 @@ struct SettingsView: View {
 
             Divider().overlay(KarvTheme.hairline)
 
+            Toggle(isOn: $bindableStore.preferences.notificationsEnabled) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Reset & threshold alerts")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(KarvTheme.textPrimary)
+                    Text("Notify when a 5h window resets or crosses your limit")
+                        .font(.system(size: 12))
+                        .foregroundStyle(KarvTheme.textSecondary)
+                }
+            }
+            .tint(AIProvider.gemini.accentColor)
+            .onChange(of: store.preferences.notificationsEnabled) { _, enabled in
+                if enabled {
+                    Task { _ = await KarvNotificationScheduler.requestPermission() }
+                }
+                KarvNotificationScheduler.scheduleAlerts(for: store.snapshot, preferences: store.preferences)
+            }
+
+            Divider().overlay(KarvTheme.hairline)
+
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Warning threshold")

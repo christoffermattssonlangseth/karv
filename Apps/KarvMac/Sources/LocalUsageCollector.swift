@@ -11,13 +11,13 @@ struct LocalUsageCollector: Sendable {
         self.homeDirectory = homeDirectory
     }
 
-    func collectSnapshot() async -> KarvSnapshot {
+    func collectSnapshot(geminiSessionBudget: Double = 100.0) async -> KarvSnapshot {
         let now = Date()
         let hostName = Host.current().localizedName ?? "Mac"
 
         let claude = await collectClaude(now: now)
         let codex = collectCodex(now: now)
-        let gemini = collectGemini(now: now)
+        let gemini = collectGemini(now: now, sessionBudget: geminiSessionBudget)
 
         return KarvSnapshot(
             providers: [claude, codex, gemini],
@@ -25,6 +25,12 @@ struct LocalUsageCollector: Sendable {
             updatedAt: now,
             isDemoData: false
         )
+    }
+
+    /// Reads the local Claude Code OAuth token from macOS Keychain or ~/.claude/.credentials.json
+    /// so KarvMac can also offer one-tap QR pairing for Direct Claude 5G Sync on iPhone.
+    func readCurrentClaudeOAuthToken() -> String? {
+        readClaudeOAuthToken()
     }
 
     // MARK: - Claude (~/.claude + Claude Code OAuth)
@@ -328,7 +334,7 @@ struct LocalUsageCollector: Sendable {
 
     // MARK: - Gemini (~/.gemini)
 
-    private func collectGemini(now: Date) -> ProviderUsageSnapshot {
+    private func collectGemini(now: Date, sessionBudget: Double) -> ProviderUsageSnapshot {
         let geminiDir = homeDirectory.appendingPathComponent(".gemini")
         let exists = FileManager.default.fileExists(atPath: geminiDir.path)
 
@@ -342,23 +348,22 @@ struct LocalUsageCollector: Sendable {
         let agBrainDir = geminiDir.appendingPathComponent("antigravity-cli/brain")
         let cliTmpDir = geminiDir.appendingPathComponent("tmp")
 
-        let (recent5h, recent7d, historyPoints, sourceNote): (Int, Int, [UsageHistoryPoint], String)
+        let (recent5h, recent7d, historyPoints): (Int, Int, [UsageHistoryPoint])
         if FileManager.default.fileExists(atPath: agBrainDir.path) {
             let turnDates = collectAntigravityTurnDates(in: agBrainDir, since: sevenDaysAgo)
             let in5h = turnDates.filter { $0 >= fiveHoursAgo }
             recent5h = in5h.count
             recent7d = turnDates.count
-            historyPoints = bucketTimestampsByDay(turnDates, now: now, dailyScale: 80.0, prefix: "gemini")
-            sourceNote = "Synced from ~/.gemini"
+            historyPoints = bucketTimestampsByDay(turnDates, now: now, dailyScale: max(20.0, sessionBudget), prefix: "gemini")
         } else {
             recent5h = countRecentJSONLEntries(in: cliTmpDir, since: fiveHoursAgo)
             recent7d = countRecentJSONLEntries(in: cliTmpDir, since: sevenDaysAgo)
-            historyPoints = dailyActivityHistory(in: cliTmpDir, now: now, dailyScale: 120.0, prefix: "gemini")
-            sourceNote = "Synced from ~/.gemini/tmp"
+            historyPoints = dailyActivityHistory(in: cliTmpDir, now: now, dailyScale: max(20.0, sessionBudget), prefix: "gemini")
         }
 
-        let sessionUsed = min(Double(recent5h) / 100.0, 1.0)
-        let weeklyUsed = min(Double(recent7d) / 700.0, 1.0)
+        let safeBudget = max(20.0, sessionBudget)
+        let sessionUsed = min(Double(recent5h) / safeBudget, 1.0)
+        let weeklyUsed = min(Double(recent7d) / (safeBudget * 7.0), 1.0)
         let nextMidnight = Calendar.current.nextDate(
             after: now,
             matching: DateComponents(hour: 0, minute: 0),

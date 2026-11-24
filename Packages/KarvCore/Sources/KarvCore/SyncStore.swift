@@ -12,17 +12,29 @@ public struct KarvPreferences: Codable, Equatable, Sendable {
     public var useDemoMode: Bool
     public var warningThreshold: Double
     public var enabledProviders: [AIProvider]
+    public var notificationsEnabled: Bool
 
     public init(
         showRemainingPercentage: Bool = true,
         useDemoMode: Bool = true,
         warningThreshold: Double = 0.80,
-        enabledProviders: [AIProvider] = [.claude, .gemini]
+        enabledProviders: [AIProvider] = [.claude, .gemini],
+        notificationsEnabled: Bool = true
     ) {
         self.showRemainingPercentage = showRemainingPercentage
         self.useDemoMode = useDemoMode
         self.warningThreshold = warningThreshold
         self.enabledProviders = enabledProviders
+        self.notificationsEnabled = notificationsEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.showRemainingPercentage = try container.decodeIfPresent(Bool.self, forKey: .showRemainingPercentage) ?? true
+        self.useDemoMode = try container.decodeIfPresent(Bool.self, forKey: .useDemoMode) ?? true
+        self.warningThreshold = try container.decodeIfPresent(Double.self, forKey: .warningThreshold) ?? 0.80
+        self.enabledProviders = try container.decodeIfPresent([AIProvider].self, forKey: .enabledProviders) ?? [.claude, .gemini]
+        self.notificationsEnabled = try container.decodeIfPresent(Bool.self, forKey: .notificationsEnabled) ?? true
     }
 
     public func isEnabled(_ provider: AIProvider) -> Bool {

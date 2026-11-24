@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import CoreImage.CIFilterBuiltins
+import ServiceManagement
 import KarvCore
 
 @main
@@ -189,6 +191,18 @@ final class MacSyncCoordinator {
     var snapshot: KarvSnapshot
     var isSyncing = false
     var autoSyncEnabled = true
+    var launchAtLogin: Bool {
+        didSet {
+            updateLaunchAtLogin(enabled: launchAtLogin)
+        }
+    }
+    var geminiSessionBudget: Double {
+        didSet {
+            UserDefaults.standard.set(geminiSessionBudget, forKey: "karv.mac.geminiBudget")
+            syncNow()
+        }
+    }
+    var pairingFeedback: String?
 
     private let store: KarvSyncStore
     private let collector = LocalUsageCollector()
@@ -199,19 +213,58 @@ final class MacSyncCoordinator {
         let syncStore = KarvSyncStore(enableCloudSync: true)
         self.store = syncStore
         self.snapshot = syncStore.snapshot
+        let savedBudget = UserDefaults.standard.double(forKey: "karv.mac.geminiBudget")
+        self.geminiSessionBudget = savedBudget >= 20 ? savedBudget : 100.0
+        self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
+
         bonjourServer.start(initialSnapshot: syncStore.snapshot)
+        Task {
+            _ = await KarvNotificationScheduler.requestPermission()
+        }
         startPeriodicSync()
     }
 
     func syncNow() {
         guard !isSyncing else { return }
         isSyncing = true
+        let budget = geminiSessionBudget
         Task {
-            let collected = await collector.collectSnapshot()
+            let collected = await collector.collectSnapshot(geminiSessionBudget: budget)
             store.publish(collected)
             bonjourServer.update(snapshot: collected)
+            KarvNotificationScheduler.scheduleAlerts(for: collected, preferences: store.preferences)
             snapshot = collected
             isSyncing = false
+        }
+    }
+
+    func claudePairingURLString() -> String? {
+        guard let token = collector.readCurrentClaudeOAuthToken(),
+              let encoded = token.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else {
+            return nil
+        }
+        return "karv://claude-token?t=\(encoded)"
+    }
+
+    func copyClaudeTokenToClipboard() {
+        guard let token = collector.readCurrentClaudeOAuthToken() else {
+            pairingFeedback = "No Claude OAuth token found in Keychain."
+            return
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(token, forType: .string)
+        pairingFeedback = "Copied Claude token to clipboard!"
+    }
+
+    private func updateLaunchAtLogin(enabled: Bool) {
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            // Silently ignore if running from a non-registered debug path
         }
     }
 
@@ -228,8 +281,23 @@ final class MacSyncCoordinator {
     }
 }
 
+enum QRCodeGenerator {
+    static func makeImage(from string: String) -> NSImage? {
+        let context = CIContext()
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(string.utf8)
+        filter.correctionLevel = "M"
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 7, y: 7))
+        guard let cgImage = context.createCGImage(scaled, from: scaled.extent) else { return nil }
+        return NSImage(cgImage: cgImage, size: NSSize(width: 170, height: 170))
+    }
+}
+
 struct MenuBarPopoverView: View {
     @Bindable var coordinator: MacSyncCoordinator
+    @State private var showPairingQR = false
+    @State private var showCalibration = false
 
     private let primaryText = Color(red: 0.98, green: 0.98, blue: 0.99)
     private let secondaryText = Color(red: 0.65, green: 0.65, blue: 0.70)
@@ -351,23 +419,131 @@ struct MenuBarPopoverView: View {
 
             Divider().overlay(Color.white.opacity(0.10))
 
-            HStack {
-                Toggle(isOn: $coordinator.autoSyncEnabled) {
-                    Text("Auto-sync (5m)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(secondaryText)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.mini)
-
-                Spacer()
-
-                Button("Quit") {
-                    NSApplication.shared.terminate(nil)
+            // Quick Actions: Pair iPhone (5G QR) + Gemini Calibration
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showPairingQR.toggle()
+                        if showPairingQR { showCalibration = false }
+                    }
+                } label: {
+                    Label("Pair iPhone (5G)", systemImage: "qrcode")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(primaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(secondaryText)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showCalibration.toggle()
+                        if showCalibration { showPairingQR = false }
+                    }
+                } label: {
+                    Label("Gemini Scale", systemImage: "slider.horizontal.3")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(primaryText)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.09), in: RoundedRectangle(cornerRadius: 8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if showPairingQR {
+                VStack(spacing: 8) {
+                    Text("Scan with iPhone Camera for Direct Claude 5G Sync")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(secondaryText)
+                        .multilineTextAlignment(.center)
+
+                    if let urlStr = coordinator.claudePairingURLString(),
+                       let qrImage = QRCodeGenerator.makeImage(from: urlStr) {
+                        Image(nsImage: qrImage)
+                            .interpolation(.none)
+                            .resizable()
+                            .frame(width: 150, height: 150)
+                            .padding(8)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+                    } else {
+                        Text("No Claude OAuth token found in Keychain.")
+                            .font(.system(size: 10))
+                            .foregroundStyle(secondaryText)
+                    }
+
+                    Button("Copy Claude Token Instead") {
+                        coordinator.copyClaudeTokenToClipboard()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(AIProvider.claude.accentColor)
+
+                    if let feedback = coordinator.pairingFeedback {
+                        Text(feedback)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(AIProvider.codex.accentColor)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(10)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            if showCalibration {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Gemini 5h Prompt Budget")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(primaryText)
+                        Spacer()
+                        Text("\(Int(coordinator.geminiSessionBudget)) prompts")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(AIProvider.gemini.accentColor)
+                    }
+                    Slider(value: $coordinator.geminiSessionBudget, in: 30...250, step: 10)
+                        .tint(AIProvider.gemini.accentColor)
+                }
+                .padding(10)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+            }
+
+            Divider().overlay(Color.white.opacity(0.10))
+
+            VStack(spacing: 8) {
+                HStack {
+                    Toggle(isOn: $coordinator.launchAtLogin) {
+                        Text("Launch at login")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+
+                    Spacer()
+
+                    Toggle(isOn: $coordinator.autoSyncEnabled) {
+                        Text("Auto-sync")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                }
+
+                HStack {
+                    Text("iCloud + Wi-Fi sync active")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(secondaryText.opacity(0.65))
+                    Spacer()
+                    Button("Quit") {
+                        NSApplication.shared.terminate(nil)
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(secondaryText)
+                }
             }
         }
         .padding(14)

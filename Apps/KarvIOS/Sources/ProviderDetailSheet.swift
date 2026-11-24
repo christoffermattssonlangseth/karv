@@ -10,6 +10,7 @@ struct ProviderDetailSheet: View {
 
     @State private var isEditingManual = false
     @State private var isShowingWebAuth = false
+    @State private var isPinnedToLockScreen = false
     @State private var manualPrimaryUsed: Double = 0.5
     @State private var manualSecondaryUsed: Double = 0.3
     @State private var manualPlanName: String = ""
@@ -28,6 +29,7 @@ struct ProviderDetailSheet: View {
                         ScrollView {
                             VStack(spacing: 16) {
                                 heroGaugeCard(snapshot: snapshot, now: context.date)
+                                lockScreenPinButton(snapshot: snapshot)
                                 windowsBreakdownCard(snapshot: snapshot, now: context.date)
                                 historyChartCard(snapshot: snapshot)
                                 sourceMetadataCard(snapshot: snapshot, now: context.date)
@@ -38,6 +40,9 @@ struct ProviderDetailSheet: View {
                             }
                             .padding(.horizontal, 18)
                             .padding(.vertical, 12)
+                            .onAppear {
+                                isPinnedToLockScreen = LiveActivityManager.isPinned(provider: provider)
+                            }
                         }
                     }
                 }
@@ -140,6 +145,31 @@ struct ProviderDetailSheet: View {
         }
         .padding(20)
         .karvCard(glow: snapshot.provider.accentColor, cornerRadius: 24)
+    }
+
+    private func lockScreenPinButton(snapshot: ProviderUsageSnapshot) -> some View {
+        Button {
+            Task {
+                isPinnedToLockScreen = await LiveActivityManager.togglePin(for: snapshot)
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: isPinnedToLockScreen ? "pin.slash.fill" : "pin.fill")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(isPinnedToLockScreen ? KarvTheme.textPrimary : snapshot.provider.accentColor)
+                Text(isPinnedToLockScreen ? "Unpin Countdown from Lock Screen" : "Pin Live Reset Countdown to Lock Screen")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(KarvTheme.textPrimary)
+                Spacer()
+                Image(systemName: "lock.iphone")
+                    .font(.system(size: 12))
+                    .foregroundStyle(KarvTheme.textTertiary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 13)
+            .karvCard(glow: isPinnedToLockScreen ? snapshot.provider.accentColor : nil, cornerRadius: 16)
+        }
+        .buttonStyle(CardPressButtonStyle())
     }
 
     private func windowsBreakdownCard(snapshot: ProviderUsageSnapshot, now: Date) -> some View {

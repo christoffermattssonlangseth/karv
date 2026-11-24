@@ -43,6 +43,11 @@ targets:
         NSLocalNetworkUsageDescription: "Karv discovers KarvMac on your local Wi-Fi network to sync your AI usage stats."
         NSBonjourServices:
           - _karv._tcp
+        NSSupportsLiveActivities: true
+        CFBundleURLTypes:
+          - CFBundleURLName: com.cml.karv.ios
+            CFBundleURLSchemes:
+              - karv
     entitlements:
       path: Apps/KarvIOS/Karv.entitlements
       properties:
