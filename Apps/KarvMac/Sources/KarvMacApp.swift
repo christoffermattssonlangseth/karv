@@ -17,51 +17,105 @@ struct KarvMacApp: App {
     }
 }
 
-/// Renders crisp Retina `W` (Weekly) and `S` (Session/Daily) pacing rings directly for the macOS menu bar.
+/// Renders crisp Retina `W` (Weekly) and `S` (Session/Daily) pacing rings
+/// for every connected provider (e.g., Claude & Gemini) directly in the macOS menu bar.
 @MainActor
 enum MenuBarRingRenderer {
     static func render(snapshot: KarvSnapshot) -> NSImage {
         let now = Date()
         let connected = snapshot.providers.filter(\.isConnected)
-        let primary = connected.first(where: { $0.provider == .claude }) ?? connected.first ?? snapshot.providers.first
+        let items = connected.isEmpty ? Array(snapshot.providers.prefix(1)) : connected
 
-        let sessionUsed = primary?.primaryWindow.usedPercent ?? 0
-        let sessionElapsed = elapsedFraction(
-            resetsAt: primary?.primaryWindow.resetsAt ?? now.addingTimeInterval(5 * 3600),
-            duration: 5 * 3600,
-            now: now
-        )
-
-        let weeklyUsed = primary?.secondaryWindow?.usedPercent ?? 0
-        let weeklyElapsed = elapsedFraction(
-            resetsAt: primary?.secondaryWindow?.resetsAt ?? now.addingTimeInterval(7 * 86400),
-            duration: 7 * 86400,
-            now: now
-        )
-
-        let ringSize: CGFloat = 18
-        let gap: CGFloat = 6
-        let totalWidth = ringSize * 2 + gap + 4
+        let ringSize: CGFloat = 17
+        let dotSize: CGFloat = 5
+        let dotToRingGap: CGFloat = 4
+        let intraPairGap: CGFloat = 4
+        let dividerBlockWidth: CGFloat = 11 // 5px pad + 1px hairline + 5px pad
+        let horizontalPad: CGFloat = 3
         let totalHeight: CGFloat = 22
 
+        let groupWidth = dotSize + dotToRingGap + ringSize + intraPairGap + ringSize
+        let totalWidth = horizontalPad * 2
+            + CGFloat(items.count) * groupWidth
+            + CGFloat(max(0, items.count - 1)) * dividerBlockWidth
+
         let image = NSImage(size: NSSize(width: totalWidth, height: totalHeight), flipped: false) { _ in
-            let yOffset = (totalHeight - ringSize) / 2
-            drawRing(
-                letter: "W",
-                used: weeklyUsed,
-                elapsed: weeklyElapsed,
-                rect: CGRect(x: 2, y: yOffset, width: ringSize, height: ringSize)
-            )
-            drawRing(
-                letter: "S",
-                used: sessionUsed,
-                elapsed: sessionElapsed,
-                rect: CGRect(x: 2 + ringSize + gap, y: yOffset, width: ringSize, height: ringSize)
-            )
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            let ringY = (totalHeight - ringSize) / 2
+            var cursorX = horizontalPad
+
+            for (index, item) in items.enumerated() {
+                if index > 0 {
+                    // Subtle vertical hairline separator between providers
+                    let dividerX = cursorX + dividerBlockWidth / 2
+                    ctx.saveGState()
+                    ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.24).cgColor)
+                    ctx.setLineWidth(1.0)
+                    ctx.move(to: CGPoint(x: dividerX, y: 5))
+                    ctx.addLine(to: CGPoint(x: dividerX, y: totalHeight - 5))
+                    ctx.strokePath()
+                    ctx.restoreGState()
+                    cursorX += dividerBlockWidth
+                }
+
+                // Provider accent dot (terracotta = Claude, emerald = Codex, sapphire = Gemini)
+                let dotRect = CGRect(
+                    x: cursorX,
+                    y: (totalHeight - dotSize) / 2,
+                    width: dotSize,
+                    height: dotSize
+                )
+                ctx.saveGState()
+                ctx.setFillColor(providerNSColor(item.provider).cgColor)
+                ctx.fillEllipse(in: dotRect)
+                ctx.restoreGState()
+                cursorX += dotSize + dotToRingGap
+
+                let weeklyUsed = item.secondaryWindow?.usedPercent ?? 0
+                let weeklyElapsed = elapsedFraction(
+                    resetsAt: item.secondaryWindow?.resetsAt ?? now.addingTimeInterval(7 * 86400),
+                    duration: 7 * 86400,
+                    now: now
+                )
+
+                let sessionDuration: TimeInterval = item.primaryWindow.title.localizedCaseInsensitiveContains("5h")
+                    ? 5 * 3600
+                    : 24 * 3600
+                let sessionUsed = item.primaryWindow.usedPercent
+                let sessionElapsed = elapsedFraction(
+                    resetsAt: item.primaryWindow.resetsAt,
+                    duration: sessionDuration,
+                    now: now
+                )
+
+                drawRing(
+                    letter: "W",
+                    used: weeklyUsed,
+                    elapsed: weeklyElapsed,
+                    rect: CGRect(x: cursorX, y: ringY, width: ringSize, height: ringSize)
+                )
+                cursorX += ringSize + intraPairGap
+
+                drawRing(
+                    letter: "S",
+                    used: sessionUsed,
+                    elapsed: sessionElapsed,
+                    rect: CGRect(x: cursorX, y: ringY, width: ringSize, height: ringSize)
+                )
+                cursorX += ringSize
+            }
             return true
         }
         image.isTemplate = false
         return image
+    }
+
+    private static func providerNSColor(_ provider: AIProvider) -> NSColor {
+        switch provider {
+        case .claude: NSColor(red: 0.851, green: 0.467, blue: 0.341, alpha: 1.0)
+        case .codex:  NSColor(red: 0.063, green: 0.725, blue: 0.506, alpha: 1.0)
+        case .gemini: NSColor(red: 0.376, green: 0.647, blue: 0.980, alpha: 1.0)
+        }
     }
 
     private static func elapsedFraction(resetsAt: Date, duration: TimeInterval, now: Date) -> Double {
