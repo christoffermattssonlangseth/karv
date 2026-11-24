@@ -44,6 +44,10 @@ targets:
         NSBonjourServices:
           - _karv._tcp
         NSSupportsLiveActivities: true
+        UIBackgroundModes:
+          - fetch
+        BGTaskSchedulerPermittedIdentifiers:
+          - com.cml.karv.refresh
         CFBundleURLTypes:
           - CFBundleURLName: com.cml.karv.ios
             CFBundleURLSchemes:

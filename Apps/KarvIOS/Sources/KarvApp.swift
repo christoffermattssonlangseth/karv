@@ -1,12 +1,19 @@
 import SwiftUI
 import WidgetKit
+import BackgroundTasks
 import KarvCore
 
 @main
 struct KarvApp: App {
+    private static let bgRefreshTaskID = "com.cml.karv.refresh"
+
     @State private var store = KarvSyncStore()
     @State private var macSync = MacBonjourSyncClient()
     @Environment(\.scenePhase) private var scenePhase
+
+    init() {
+        Self.registerBackgroundRefresh()
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -18,19 +25,28 @@ struct KarvApp: App {
                 .task {
                     macSync.start(store: store)
                     _ = await KarvNotificationScheduler.requestPermission()
-                    await refreshDirectClaudeIfConfigured()
+                    await refreshAllSources()
                     KarvNotificationScheduler.scheduleAlerts(for: store.snapshot, preferences: store.preferences)
-                }
-                .onChange(of: scenePhase) { _, phase in
-                    if phase == .active {
-                        macSync.pullNow()
-                        Task {
-                            await refreshDirectClaudeIfConfigured()
-                            await LiveActivityManager.refreshActiveActivities(from: store.snapshot)
+
+                    // Live foreground refresh loop every 30 seconds while app is open
+                    while !Task.isCancelled {
+                        try? await Task.sleep(for: .seconds(30))
+                        if scenePhase == .active {
+                            await refreshAllSources()
                         }
                     }
                 }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active {
+                        Task {
+                            await refreshAllSources()
+                        }
+                    } else if phase == .background {
+                        Self.scheduleBackgroundRefresh()
+                    }
+                }
                 .onChange(of: store.snapshot) { _, updated in
+                    WidgetCenter.shared.reloadAllTimelines()
                     KarvNotificationScheduler.scheduleAlerts(for: updated, preferences: store.preferences)
                     Task {
                         await LiveActivityManager.refreshActiveActivities(from: updated)
@@ -40,6 +56,15 @@ struct KarvApp: App {
                     handleIncomingDeepLink(url)
                 }
         }
+    }
+
+    private func refreshAllSources() async {
+        macSync.pullNow()
+        if !store.preferences.useDemoMode {
+            store.refresh()
+        }
+        await refreshDirectClaudeIfConfigured()
+        await LiveActivityManager.refreshActiveActivities(from: store.snapshot)
     }
 
     private func handleIncomingDeepLink(_ url: URL) {
@@ -62,6 +87,44 @@ struct KarvApp: App {
             store.updateClaudeFromDirectOAuth(live)
             WidgetCenter.shared.reloadAllTimelines()
         }
+    }
+
+    private static func registerBackgroundRefresh() {
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: bgRefreshTaskID, using: nil) { task in
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            scheduleBackgroundRefresh()
+            let work = Task {
+                let store = await MainActor.run { KarvSyncStore(enableCloudSync: true) }
+                await MainActor.run {
+                    if !store.preferences.useDemoMode {
+                        store.refresh()
+                    }
+                }
+                if let token = KarvKeychain.loadClaudeToken(),
+                   let live = await ClaudeOAuthUsageClient.fetchUsage(token: token) {
+                    await MainActor.run {
+                        store.updateClaudeFromDirectOAuth(live)
+                    }
+                }
+                let latest = await MainActor.run { store.snapshot }
+                WidgetCenter.shared.reloadAllTimelines()
+                await LiveActivityManager.refreshActiveActivities(from: latest)
+                refreshTask.setTaskCompleted(success: true)
+            }
+            refreshTask.expirationHandler = {
+                work.cancel()
+                refreshTask.setTaskCompleted(success: false)
+            }
+        }
+    }
+
+    private static func scheduleBackgroundRefresh() {
+        let request = BGAppRefreshTaskRequest(identifier: bgRefreshTaskID)
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 5 * 60)
+        try? BGTaskScheduler.shared.submit(request)
     }
 }
 

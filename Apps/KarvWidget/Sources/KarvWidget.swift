@@ -21,9 +21,16 @@ struct KarvTimelineProvider: TimelineProvider {
     func getTimeline(in context: Context, completion: @escaping (Timeline<KarvWidgetEntry>) -> Void) {
         let now = Date()
         let snap = KarvSyncStore.readLatestSnapshotForWidget()
-        let entry = KarvWidgetEntry(date: now, snapshot: snap)
-        let nextUpdate = Calendar.current.date(byAdding: .minute, value: 15, to: now) ?? now.addingTimeInterval(900)
-        completion(Timeline(entries: [entry], policy: .after(nextUpdate)))
+
+        // Generate 6 timeline entries spaced every 5 minutes so pacing needles
+        // and reset countdowns stay accurate on the Home & Lock Screen.
+        var entries: [KarvWidgetEntry] = []
+        for step in 0..<6 {
+            let entryDate = now.addingTimeInterval(Double(step) * 300)
+            entries.append(KarvWidgetEntry(date: entryDate, snapshot: snap))
+        }
+        let nextRefresh = now.addingTimeInterval(300)
+        completion(Timeline(entries: entries, policy: .after(nextRefresh)))
     }
 }
 

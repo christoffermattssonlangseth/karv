@@ -208,6 +208,7 @@ final class MacSyncCoordinator {
     private let collector = LocalUsageCollector()
     private let bonjourServer = LocalBonjourSyncServer()
     private var timerTask: Task<Void, Never>?
+    private var wakeObserver: NSObjectProtocol?
 
     init() {
         let syncStore = KarvSyncStore(enableCloudSync: true)
@@ -220,6 +221,15 @@ final class MacSyncCoordinator {
         bonjourServer.start(initialSnapshot: syncStore.snapshot)
         Task {
             _ = await KarvNotificationScheduler.requestPermission()
+        }
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.syncNow()
+            }
         }
         startPeriodicSync()
     }
@@ -272,7 +282,7 @@ final class MacSyncCoordinator {
         syncNow()
         timerTask = Task { [weak self] in
             while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(300))
+                try? await Task.sleep(for: .seconds(60))
                 if let self, self.autoSyncEnabled {
                     self.syncNow()
                 }
@@ -524,7 +534,7 @@ struct MenuBarPopoverView: View {
                     Spacer()
 
                     Toggle(isOn: $coordinator.autoSyncEnabled) {
-                        Text("Auto-sync")
+                        Text("Auto-sync (1m)")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(secondaryText)
                     }
