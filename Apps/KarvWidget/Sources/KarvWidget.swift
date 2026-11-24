@@ -439,19 +439,42 @@ struct KarvWidgetEntryView: View {
     // MARK: Lock Screen
 
     private var accessoryRectangularView: some View {
-        HStack(spacing: 10) {
-            ForEach(entry.snapshot.providers.prefix(3)) { item in
-                VStack(spacing: 2) {
-                    PacingRingGauge(
-                        letter: item.provider.monogram,
-                        usedPercent: item.primaryWindow.usedPercent,
-                        elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
-                        size: 36,
-                        lineWidth: 4.5
-                    )
-                    Text(KarvFormatting.percentString(item.primaryWindow.usedPercent))
-                        .font(.system(size: 9, weight: .semibold, design: .monospaced))
+        let items = Array(entry.snapshot.providers.prefix(2))
+        return HStack(spacing: 6) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                if index > 0 {
+                    Rectangle()
+                        .fill(Color.white.opacity(0.25))
+                        .frame(width: 1, height: 34)
                 }
+
+                VStack(spacing: 3) {
+                    Text(item.provider.displayName.uppercased())
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .tracking(0.6)
+                        .lineLimit(1)
+
+                    HStack(spacing: 5) {
+                        PacingRingGauge(
+                            letter: "S",
+                            usedPercent: item.primaryWindow.usedPercent,
+                            elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
+                            size: 32,
+                            lineWidth: 3.8
+                        )
+
+                        if let weekly = item.secondaryWindow {
+                            PacingRingGauge(
+                                letter: "W",
+                                usedPercent: weekly.usedPercent,
+                                elapsedPercent: weekly.elapsedFraction(at: entry.date, isSecondary: true),
+                                size: 32,
+                                lineWidth: 3.8
+                            )
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
             }
         }
         .containerBackground(.clear, for: .widget)
@@ -543,6 +566,7 @@ struct KarvResetLiveActivity: Widget {
                     Text(context.state.windowTitle)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.white.opacity(0.65))
+                        .frame(width: 68, alignment: .leading)
 
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -554,9 +578,34 @@ struct KarvResetLiveActivity: Widget {
                     }
                     .frame(height: 6)
 
-                    Text("\(KarvFormatting.percentString(context.state.usedPercent)) used")
+                    Text("\(KarvFormatting.percentString(context.state.usedPercent))")
                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.85))
+                        .foregroundStyle(.white.opacity(0.9))
+                        .frame(width: 34, alignment: .trailing)
+                }
+
+                if let weeklyUsed = context.state.weeklyUsedPercent {
+                    HStack(spacing: 10) {
+                        Text("Weekly")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(.white.opacity(0.55))
+                            .frame(width: 68, alignment: .leading)
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.12))
+                                Capsule()
+                                    .fill(provider.secondaryAccentColor.opacity(0.85))
+                                    .frame(width: max(6, geo.size.width * min(max(weeklyUsed, 0.02), 1.0)))
+                            }
+                        }
+                        .frame(height: 5)
+
+                        Text("\(KarvFormatting.percentString(weeklyUsed))")
+                            .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.75))
+                            .frame(width: 34, alignment: .trailing)
+                    }
                 }
             }
             .padding(16)

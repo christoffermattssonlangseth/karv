@@ -25,7 +25,9 @@ enum LiveActivityManager {
         let state = KarvResetActivityAttributes.ContentState(
             usedPercent: snapshot.primaryWindow.usedPercent,
             resetsAt: snapshot.primaryWindow.resetsAt,
-            windowTitle: snapshot.primaryWindow.title
+            windowTitle: snapshot.primaryWindow.title,
+            weeklyUsedPercent: snapshot.secondaryWindow?.usedPercent,
+            weeklyResetsAt: snapshot.secondaryWindow?.resetsAt
         )
         let content = ActivityContent(state: state, staleDate: snapshot.primaryWindow.resetsAt)
 
@@ -62,7 +64,9 @@ enum LiveActivityManager {
             let state = KarvResetActivityAttributes.ContentState(
                 usedPercent: snap.primaryWindow.usedPercent,
                 resetsAt: snap.primaryWindow.resetsAt,
-                windowTitle: snap.primaryWindow.title
+                windowTitle: snap.primaryWindow.title,
+                weeklyUsedPercent: snap.secondaryWindow?.usedPercent,
+                weeklyResetsAt: snap.secondaryWindow?.resetsAt
             )
             await activity.update(ActivityContent(state: state, staleDate: snap.primaryWindow.resetsAt))
         }
