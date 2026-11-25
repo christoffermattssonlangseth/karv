@@ -176,7 +176,10 @@ enum MenuBarRingRenderer {
 @MainActor
 @Observable
 final class MacSyncCoordinator {
-    var snapshot: KarvSnapshot
+    /// What the menu bar and popover show: the merged view of this Mac's own readings and
+    /// anything newer/real that arrived from the iPhone via iCloud. Showing only the Mac's
+    /// own collection made a failed Mac fetch (estimate) hide a correct phone reading.
+    var snapshot: KarvSnapshot { store.snapshot }
     var isSyncing = false
     var autoSyncEnabled = true
     var launchAtLogin: Bool {
@@ -214,6 +217,7 @@ final class MacSyncCoordinator {
         didSet {
             UserDefaults.standard.set(useAntigravityQuota, forKey: "karv.mac.useAntigravityQuota")
             antigravityAccessDenied = false
+            antigravityPausedUntil = .distantPast
             if !useAntigravityQuota {
                 lastLiveGemini = nil
                 antigravityStatus = nil
@@ -232,6 +236,9 @@ final class MacSyncCoordinator {
     private var lastLiveGemini: ProviderUsageSnapshot?
     /// After the user declines the Keychain prompt, stop asking until they toggle again.
     private var antigravityAccessDenied = false
+    /// After Google rejects the request, wait before trying again instead of
+    /// sending failing requests every minute.
+    private var antigravityPausedUntil: Date = .distantPast
     /// A windowless menu-bar app gets App Napped, which stretches the 1-minute
     /// `Task.sleep` to many minutes. Holding this activity opts out (sleep is still allowed).
     private let appNapActivity = ProcessInfo.processInfo.beginActivity(
@@ -242,7 +249,10 @@ final class MacSyncCoordinator {
     init() {
         let syncStore = KarvSyncStore(enableCloudSync: true)
         self.store = syncStore
-        self.snapshot = syncStore.snapshot
+        // Seed "last real reading" from what was saved, so a restart doesn't drop the
+        // Mac back to the rough estimate until the next successful API call.
+        self.lastLiveClaude = Self.realReading(.claude, in: syncStore.snapshot)
+        self.lastLiveGemini = Self.realReading(.gemini, in: syncStore.snapshot)
         let savedBudget = UserDefaults.standard.double(forKey: "karv.mac.geminiBudget")
         self.geminiSessionBudget = savedBudget >= 20 ? savedBudget : 100.0
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
@@ -271,7 +281,7 @@ final class MacSyncCoordinator {
         let budget = geminiSessionBudget
         let lastLive = lastLiveClaude
         let lastGemini = lastLiveGemini
-        let readAntigravity = useAntigravityQuota && !antigravityAccessDenied
+        let readAntigravity = useAntigravityQuota && !antigravityAccessDenied && Date() >= antigravityPausedUntil
         Task {
             let antigravity = readAntigravity ? await AntigravityQuotaReader.fetch() : nil
             if let antigravity {
@@ -283,17 +293,17 @@ final class MacSyncCoordinator {
                 antigravity: antigravity,
                 lastLiveGemini: lastGemini
             )
-            if let claude = collected.snapshot(for: .claude), claude.primaryWindow.subtitle == LocalUsageCollector.liveClaudeSubtitle {
-                lastLiveClaude = claude
+            // Merge rather than replace: a real reading (e.g. the iPhone's direct Claude
+            // fetch) beats this Mac's estimate; the newer of two real readings wins.
+            let merged = store.snapshot.isDemoData ? collected : store.snapshot.merged(with: collected)
+            store.publish(merged)
+            lastLiveClaude = Self.realReading(.claude, in: merged) ?? lastLiveClaude
+            if useAntigravityQuota {
+                lastLiveGemini = Self.realReading(.gemini, in: merged) ?? lastLiveGemini
             }
-            if let gemini = collected.snapshot(for: .gemini), gemini.primaryWindow.subtitle == LocalUsageCollector.liveGeminiSubtitle {
-                lastLiveGemini = gemini
-            }
-            store.publish(collected)
             shareClaudeTokenIfChanged()
-            bonjourServer.update(snapshot: collected)
-            KarvNotificationScheduler.scheduleAlerts(for: collected, preferences: store.preferences)
-            snapshot = collected
+            bonjourServer.update(snapshot: merged)
+            KarvNotificationScheduler.scheduleAlerts(for: merged, preferences: store.preferences)
             isSyncing = false
         }
     }
@@ -316,6 +326,15 @@ final class MacSyncCoordinator {
         }
     }
 
+    /// A provider reading that came from a real quota source and is still current.
+    private static func realReading(_ provider: AIProvider, in snapshot: KarvSnapshot) -> ProviderUsageSnapshot? {
+        guard !snapshot.isDemoData,
+              let item = snapshot.snapshot(for: provider),
+              item.isConnected, !item.isEstimate,
+              item.primaryWindow.resetsAt > Date() else { return nil }
+        return item
+    }
+
     private func updateAntigravityStatus(_ outcome: AntigravityQuotaReader.Outcome) {
         switch outcome {
         case .success:
@@ -328,7 +347,8 @@ final class MacSyncCoordinator {
             antigravityAccessDenied = true
             antigravityStatus = "Keychain access denied — toggle off and on to ask again"
         case let .failed(message):
-            antigravityStatus = message
+            antigravityPausedUntil = Date().addingTimeInterval(3600)
+            antigravityStatus = "\(message) — retrying in 1h; showing estimate"
         }
     }
 

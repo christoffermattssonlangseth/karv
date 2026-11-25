@@ -29,7 +29,6 @@ enum AntigravityQuotaReader {
         case failed(String)
     }
 
-    private static let endpoint = URL(string: "https://daily-cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels")!
 
     static var diagnosticsDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -73,27 +72,57 @@ enum AntigravityQuotaReader {
             }
         }
 
-        // 2. Same read-only call Antigravity makes.
-        let projectID = readDefaultProjectID()
-        diag.add("project id \(projectID == nil ? "absent" : "present")")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 10
-        request.setValue("Bearer \(credential.accessToken)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let body: [String: Any] = projectID.map { ["project": $0] } ?? [:]
-        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        // 2. Same read-only call Antigravity makes. The exact host/project combination
+        // isn't documented, so try the plausible ones once and remember what works.
+        let cachedProject = readDefaultProjectID()
+        diag.add("cached project id \(cachedProject == nil ? "absent" : "present")")
 
-        guard let (responseData, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse else {
-            diag.add("network error")
-            return .failed("Network error")
+        var attempts: [(host: String, project: String?)] = []
+        if let remembered = UserDefaults.standard.string(forKey: rememberedHostKey) {
+            let project = UserDefaults.standard.string(forKey: rememberedProjectKey)
+            attempts.append((remembered, project))
         }
-        diag.add("HTTP \(http.statusCode)")
-        guard (200..<300).contains(http.statusCode) else {
-            if http.statusCode == 401 { return .tokenExpired }
-            return .failed("Google returned HTTP \(http.statusCode)")
+        var assistProject: String?
+        if attempts.isEmpty {
+            assistProject = await loadCodeAssistProject(token: credential.accessToken, diag: &diag)
+            for host in hosts {
+                if let assistProject { attempts.append((host, assistProject)) }
+                if let cachedProject, cachedProject != assistProject { attempts.append((host, cachedProject)) }
+                attempts.append((host, nil))
+            }
+        }
+
+        var responseData = Data()
+        var succeeded = false
+        var lastStatus = 0
+        for attempt in attempts {
+            let label = "\(attempt.host.replacingOccurrences(of: "https://", with: "")) project=\(attempt.project == nil ? "none" : (attempt.project == assistProject ? "loadCodeAssist" : "cached"))"
+            guard let (data, status) = await post(
+                url: URL(string: attempt.host + "/v1internal:fetchAvailableModels")!,
+                token: credential.accessToken,
+                body: attempt.project.map { ["project": $0] } ?? [:]
+            ) else {
+                diag.add("\(label): network error")
+                continue
+            }
+            lastStatus = status
+            diag.add("\(label): HTTP \(status)")
+            if (200..<300).contains(status) {
+                responseData = data
+                succeeded = true
+                UserDefaults.standard.set(attempt.host, forKey: rememberedHostKey)
+                UserDefaults.standard.set(attempt.project, forKey: rememberedProjectKey)
+                break
+            }
+            // Google's error JSON (status/message/reason) explains rejections; no secrets.
+            diag.add("  error: " + (String(data: data.prefix(400), encoding: .utf8) ?? "<binary>").replacingOccurrences(of: "\n", with: " "))
+            if status == 401 { return .tokenExpired }
+        }
+        guard succeeded else {
+            // A remembered combination may have stopped working; rediscover next time.
+            UserDefaults.standard.removeObject(forKey: rememberedHostKey)
+            UserDefaults.standard.removeObject(forKey: rememberedProjectKey)
+            return lastStatus == 0 ? .failed("Network error") : .failed("Google returned HTTP \(lastStatus)")
         }
 
         // Keep the raw response (it holds model names and quota, no credentials) so the
@@ -115,6 +144,56 @@ enum AntigravityQuotaReader {
             return .failed("No quota information in response")
         }
         return .success(models)
+    }
+
+    private static let hosts = [
+        "https://daily-cloudcode-pa.googleapis.com",
+        "https://cloudcode-pa.googleapis.com"
+    ]
+    private static let rememberedHostKey = "karv.mac.antigravityHost"
+    private static let rememberedProjectKey = "karv.mac.antigravityProject"
+
+    private static func post(url: URL, token: String, body: [String: Any]) async -> (Data, Int)? {
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        guard let (data, response) = try? await URLSession.shared.data(for: request),
+              let http = response as? HTTPURLResponse else { return nil }
+        return (data, http.statusCode)
+    }
+
+    /// Asks Google which project the account's quota lives under (Antigravity makes this
+    /// same call constantly). Returns nil if the answer doesn't contain one.
+    private static func loadCodeAssistProject(token: String, diag: inout Diagnostics) async -> String? {
+        for host in hosts {
+            guard let (data, status) = await post(
+                url: URL(string: host + "/v1internal:loadCodeAssist")!,
+                token: token,
+                body: ["metadata": ["ideType": "IDE_UNSPECIFIED", "platform": "PLATFORM_UNSPECIFIED", "pluginType": "GEMINI"]]
+            ) else {
+                diag.add("loadCodeAssist \(host): network error")
+                continue
+            }
+            diag.add("loadCodeAssist \(host.replacingOccurrences(of: "https://", with: "")): HTTP \(status)")
+            guard (200..<300).contains(status),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                diag.add("  error: " + (String(data: data.prefix(300), encoding: .utf8) ?? "").replacingOccurrences(of: "\n", with: " "))
+                continue
+            }
+            diag.add("  keys: \(json.keys.sorted().joined(separator: ", "))")
+            if let project = json["cloudaicompanionProject"] as? String, !project.isEmpty {
+                return project
+            }
+            if let projectObj = json["cloudaicompanionProject"] as? [String: Any],
+               let id = projectObj["id"] as? String, !id.isEmpty {
+                return id
+            }
+        }
+        return nil
     }
 
     // MARK: - Parsing

@@ -74,6 +74,7 @@ struct LocalUsageCollector: Sendable {
         } else {
             nil
         }
+        Self.writeClaudeDiagnostics(outcome: outcome, now: now)
         if let live = outcome?.result {
             var updatedHistory = historyPoints
             if !updatedHistory.isEmpty {
@@ -537,6 +538,23 @@ struct LocalUsageCollector: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// Why this Mac's own Claude call did or didn't work (no secrets), for debugging.
+    private static func writeClaudeDiagnostics(outcome: ClaudeOAuthFetchOutcome?, now: Date) {
+        let text: String = switch outcome {
+        case nil: "no Claude Code token readable (Keychain item missing or access not granted)"
+        case .success?: "ok"
+        case .unauthorized?: "unauthorized (token expired; run Claude Code to refresh it)"
+        case let .rateLimited(retryAfter)?: "rate limited (retry-after \(retryAfter.map { "\(Int($0))s" } ?? "n/a"))"
+        case let .throttled(until)?: "skipped: local cooldown until \(ISO8601DateFormatter().string(from: until))"
+        case .failed?: "network/server error"
+        }
+        let dir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Karv", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let line = "\(ISO8601DateFormatter().string(from: now)) \(text)\n"
+        try? line.data(using: .utf8)?.write(to: dir.appendingPathComponent("claude-mac.txt"), options: .atomic)
+    }
 
     /// For a rolling window: when the oldest counted event ages out, i.e. the next time
     /// usage drops. Falls back to a full window from now when nothing is counted.
