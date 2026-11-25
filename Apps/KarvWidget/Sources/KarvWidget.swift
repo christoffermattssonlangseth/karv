@@ -1,42 +1,68 @@
 import WidgetKit
 import SwiftUI
 import ActivityKit
+import AppIntents
 import KarvCore
+
+// MARK: - Configuration (long-press → Edit Widget)
+
+enum KarvWidgetBackground: String, AppEnum {
+    case dark
+    case trueBlack
+
+    static let typeDisplayRepresentation: TypeDisplayRepresentation = "Background"
+    static let caseDisplayRepresentations: [KarvWidgetBackground: DisplayRepresentation] = [
+        .dark: "Dark",
+        .trueBlack: "True Black"
+    ]
+
+    var color: Color {
+        switch self {
+        case .dark: Color(red: 0.055, green: 0.055, blue: 0.063)
+        case .trueBlack: .black
+        }
+    }
+}
+
+struct KarvWidgetConfigurationIntent: WidgetConfigurationIntent {
+    static let title: LocalizedStringResource = "Karv Widget"
+    static let description = IntentDescription("Choose the widget's background.")
+
+    @Parameter(title: "Background", default: .dark)
+    var background: KarvWidgetBackground
+}
 
 struct KarvWidgetEntry: TimelineEntry {
     let date: Date
     let snapshot: KarvSnapshot
+    var background: KarvWidgetBackground = .dark
 }
 
-struct KarvTimelineProvider: TimelineProvider {
+struct KarvTimelineProvider: AppIntentTimelineProvider {
     func placeholder(in context: Context) -> KarvWidgetEntry {
         KarvWidgetEntry(date: Date(), snapshot: KarvDemoData.makeSnapshot())
     }
 
-    func getSnapshot(in context: Context, completion: @escaping (KarvWidgetEntry) -> Void) {
+    func snapshot(for configuration: KarvWidgetConfigurationIntent, in context: Context) async -> KarvWidgetEntry {
         let snap = KarvSyncStore.readLatestSnapshotForWidget()
-        completion(KarvWidgetEntry(date: Date(), snapshot: snap))
+        return KarvWidgetEntry(date: Date(), snapshot: snap, background: configuration.background)
     }
 
-    func getTimeline(in context: Context, completion: @escaping (Timeline<KarvWidgetEntry>) -> Void) {
-        // WidgetKit's completion isn't Sendable-annotated; it is safe to call from any thread.
-        nonisolated(unsafe) let completion = completion
-        Task {
-            // Fetches Claude directly when the cached reading is old, so the widget stays
-            // fresh even if the app hasn't been opened.
-            let snap = await KarvSyncStore.refreshForWidget()
-            completion(Self.makeTimeline(snapshot: snap, now: Date()))
-        }
+    func timeline(for configuration: KarvWidgetConfigurationIntent, in context: Context) async -> Timeline<KarvWidgetEntry> {
+        // Fetches Claude directly when the cached reading is old, so the widget stays
+        // fresh even if the app hasn't been opened.
+        let snap = await KarvSyncStore.refreshForWidget()
+        return Self.makeTimeline(snapshot: snap, now: Date(), background: configuration.background)
     }
 
-    private static func makeTimeline(snapshot snap: KarvSnapshot, now: Date) -> Timeline<KarvWidgetEntry> {
+    private static func makeTimeline(snapshot snap: KarvSnapshot, now: Date, background: KarvWidgetBackground) -> Timeline<KarvWidgetEntry> {
 
         // Generate 6 timeline entries spaced every 5 minutes so pacing needles
         // and reset countdowns stay accurate on the Home & Lock Screen.
         var entries: [KarvWidgetEntry] = []
         for step in 0..<6 {
             let entryDate = now.addingTimeInterval(Double(step) * 300)
-            entries.append(KarvWidgetEntry(date: entryDate, snapshot: snap))
+            entries.append(KarvWidgetEntry(date: entryDate, snapshot: snap, background: background))
         }
         let nextRefresh = now.addingTimeInterval(300)
         return Timeline(entries: entries, policy: .after(nextRefresh))
@@ -56,6 +82,8 @@ struct PacingRingGauge: View {
     let elapsedPercent: Double
     var size: CGFloat = 44
     var lineWidth: CGFloat = 5.5
+    /// When set, shown inside the ring under a small letter (e.g. "62").
+    var value: String? = nil
 
     private var isOverPace: Bool {
         usedPercent > elapsedPercent + 0.02
@@ -98,10 +126,25 @@ struct PacingRingGauge: View {
                 .offset(y: -radius)
                 .rotationEffect(.degrees(tickAngleDegrees))
 
-            // Bold center letter
-            Text(letter)
-                .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
-                .foregroundStyle(.white)
+            if let value {
+                VStack(spacing: -1) {
+                    Text(letter)
+                        .font(.system(size: size * 0.2, weight: .heavy, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.55))
+                    Text(value)
+                        .font(.system(size: size * 0.3, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.7)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, lineWidth + 1)
+            } else {
+                // Bold center letter
+                Text(letter)
+                    .font(.system(size: size * 0.38, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
         }
         .frame(width: size, height: size)
     }
@@ -139,7 +182,12 @@ struct KarvWidgetEntryView: View {
     }
 
     private var widgetBackground: Color {
-        Color(red: 0.055, green: 0.055, blue: 0.063)
+        entry.background.color
+    }
+
+    /// Used share as a bare number for inside a ring ("62"), matching the white arc.
+    private func ringValue(_ used: Double) -> String {
+        "\(Int((min(max(used, 0), 1) * 100).rounded()))"
     }
 
     // MARK: Small — clean stacked provider sections (full name + S/W rings with %)
@@ -158,37 +206,48 @@ struct KarvWidgetEntryView: View {
                     if index > 0 {
                         Divider()
                             .overlay(Color.white.opacity(0.08))
-                            .padding(.vertical, isCompact ? 4 : 6)
+                            .padding(.vertical, isCompact ? 2 : 6)
                     }
 
                     if isCompact {
-                        HStack(spacing: 6) {
-                            Circle()
-                                .fill(item.provider.accentColor)
-                                .frame(width: 6, height: 6)
-                            Text(item.provider.displayName)
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
+                        HStack(spacing: 4) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 5) {
+                                    Circle()
+                                        .fill(item.provider.accentColor)
+                                        .frame(width: 6, height: 6)
+                                    Text(item.provider.displayName)
+                                        .font(.system(size: 12, weight: .semibold))
+                                        .foregroundStyle(.white)
+                                        .lineLimit(1)
+                                        .minimumScaleFactor(0.8)
+                                }
+                                Text("↻ \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.45))
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.8)
+                            }
 
-                            Spacer(minLength: 4)
+                            Spacer(minLength: 2)
 
-                            HStack(spacing: 6) {
+                            HStack(spacing: 4) {
                                 PacingRingGauge(
                                     letter: "S",
                                     usedPercent: item.primaryWindow.usedPercent,
                                     elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
-                                    size: 28,
-                                    lineWidth: 3.8
+                                    size: 38,
+                                    lineWidth: 4.2,
+                                    value: ringValue(item.primaryWindow.usedPercent)
                                 )
                                 if let secondary = item.secondaryWindow {
                                     PacingRingGauge(
                                         letter: "W",
                                         usedPercent: secondary.usedPercent,
                                         elapsedPercent: secondary.elapsedFraction(at: entry.date, isSecondary: true),
-                                        size: 28,
-                                        lineWidth: 3.8
+                                        size: 38,
+                                        lineWidth: 4.2,
+                                        value: ringValue(secondary.usedPercent)
                                     )
                                 }
                             }
@@ -253,7 +312,7 @@ struct KarvWidgetEntryView: View {
                 }
             }
         }
-        .padding(.horizontal, 13)
+        .padding(.horizontal, 12)
         .padding(.vertical, 11)
         .containerBackground(for: .widget) { widgetBackground }
     }
@@ -650,7 +709,7 @@ struct KarvUsageWidget: Widget {
     let kind: String = "KarvUsageWidget"
 
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: kind, provider: KarvTimelineProvider()) { entry in
+        AppIntentConfiguration(kind: kind, intent: KarvWidgetConfigurationIntent.self, provider: KarvTimelineProvider()) { entry in
             KarvWidgetEntryView(entry: entry)
         }
         .configurationDisplayName("Karv Usage")
