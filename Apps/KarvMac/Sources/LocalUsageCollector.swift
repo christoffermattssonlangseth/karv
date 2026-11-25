@@ -19,16 +19,14 @@ struct LocalUsageCollector: Sendable {
     ///   replacing a real reading with the rough local estimate.
     func collectSnapshot(
         geminiSessionBudget: Double = 100.0,
-        lastLiveClaude: ProviderUsageSnapshot? = nil,
-        antigravity: AntigravityQuotaReader.Outcome? = nil,
-        lastLiveGemini: ProviderUsageSnapshot? = nil
+        lastLiveClaude: ProviderUsageSnapshot? = nil
     ) async -> KarvSnapshot {
         let now = Date()
         let hostName = Host.current().localizedName ?? "Mac"
 
         let claude = await collectClaude(now: now, lastLive: lastLiveClaude)
         let codex = collectCodex(now: now)
-        let gemini = collectGemini(now: now, sessionBudget: geminiSessionBudget, antigravity: antigravity, lastLive: lastLiveGemini)
+        let gemini = collectGemini(now: now, sessionBudget: geminiSessionBudget)
 
         return KarvSnapshot(
             providers: [claude, codex, gemini],
@@ -336,39 +334,9 @@ struct LocalUsageCollector: Sendable {
 
     // MARK: - Gemini (~/.gemini)
 
-    /// Marks a Gemini reading that came from Antigravity's real quota (vs. the estimate).
-    static let liveGeminiSubtitle = "Live from Antigravity"
-
-    private func collectGemini(
-        now: Date,
-        sessionBudget: Double,
-        antigravity: AntigravityQuotaReader.Outcome?,
-        lastLive: ProviderUsageSnapshot?
-    ) -> ProviderUsageSnapshot {
+    private func collectGemini(now: Date, sessionBudget: Double) -> ProviderUsageSnapshot {
         let geminiDir = homeDirectory.appendingPathComponent(".gemini")
         let exists = FileManager.default.fileExists(atPath: geminiDir.path)
-
-        // 1. Real quota from Antigravity (opt-in).
-        if case let .success(models)? = antigravity,
-           let live = geminiFromAntigravity(models, now: now, history: geminiActivityHistory(now: now, sessionBudget: sessionBudget)) {
-            return live
-        }
-        // 2. Last real reading while its window hasn't reset (e.g. Antigravity closed).
-        if antigravity != nil, var kept = lastLive, kept.primaryWindow.resetsAt > now {
-            switch antigravity {
-            case .tokenExpired?:
-                kept.statusNote = "Last Antigravity reading · updates when Antigravity runs"
-            case .accessDenied?:
-                kept.statusNote = "Keychain access to Antigravity denied"
-            case .noCredentials?:
-                kept.statusNote = "Not signed in to Antigravity"
-            case let .failed(message)?:
-                kept.statusNote = "Antigravity quota unavailable: \(message)"
-            default:
-                break
-            }
-            return kept
-        }
 
         guard exists else {
             return disconnectedSnapshot(provider: .gemini, now: now, note: "~/.gemini not found")
@@ -442,56 +410,6 @@ struct LocalUsageCollector: Sendable {
             return bucketTimestampsByDay(dates, now: now, dailyScale: scale, prefix: "gemini")
         }
         return dailyActivityHistory(in: geminiDir.appendingPathComponent("tmp"), now: now, dailyScale: scale, prefix: "gemini")
-    }
-
-    /// Maps per-model Antigravity quota to Karv's two windows. The tightest Gemini model
-    /// is what limits you, so it drives each window; quotas resetting more than two days
-    /// out are treated as the weekly window.
-    private func geminiFromAntigravity(_ models: [AntigravityQuotaReader.ModelQuota], now: Date, history: [UsageHistoryPoint]) -> ProviderUsageSnapshot? {
-        let gemini = models.filter { ($0.id + " " + $0.name).lowercased().contains("gemini") }
-        let pool = gemini.isEmpty ? models : gemini
-        guard !pool.isEmpty else { return nil }
-
-        let weeklyHorizon: TimeInterval = 2 * 86400
-        let short = pool.filter { ($0.resetsAt ?? now).timeIntervalSince(now) <= weeklyHorizon }
-        let long = pool.filter { ($0.resetsAt ?? now).timeIntervalSince(now) > weeklyHorizon }
-        func tightest(_ list: [AntigravityQuotaReader.ModelQuota]) -> AntigravityQuotaReader.ModelQuota? {
-            list.min { $0.remaining < $1.remaining }
-        }
-        guard let primarySource = tightest(short) ?? tightest(long) else { return nil }
-        let secondarySource = short.isEmpty ? nil : tightest(long)
-
-        func window(_ m: AntigravityQuotaReader.ModelQuota, id: String) -> QuotaWindow {
-            let reset = m.resetsAt ?? now.addingTimeInterval(5 * 3600)
-            let horizon = reset.timeIntervalSince(now)
-            let title = horizon <= 5.5 * 3600 ? "5h Session" : (horizon <= 26 * 3600 ? "Daily Quota" : "Weekly Cap")
-            return QuotaWindow(
-                id: id,
-                title: title,
-                subtitle: Self.liveGeminiSubtitle,
-                usedPercent: 1 - m.remaining,
-                resetsAt: reset,
-                detailText: "\(m.name) · tightest of \(pool.count) models"
-            )
-        }
-
-        var updatedHistory = history
-        if !updatedHistory.isEmpty {
-            let last = updatedHistory.removeLast()
-            updatedHistory.append(UsageHistoryPoint(id: last.id, date: now, usedPercent: 1 - primarySource.remaining))
-        }
-
-        return ProviderUsageSnapshot(
-            provider: .gemini,
-            planName: "Antigravity",
-            isConnected: true,
-            primaryWindow: window(primarySource, id: "gemini-session"),
-            secondaryWindow: secondarySource.map { window($0, id: "gemini-weekly") },
-            history: updatedHistory,
-            lastSyncedAt: now,
-            source: .geminiCLI,
-            statusNote: Self.liveGeminiSubtitle
-        )
     }
 
     private func collectAntigravityTurnDates(in brainDir: URL, since cutoff: Date) -> [Date] {

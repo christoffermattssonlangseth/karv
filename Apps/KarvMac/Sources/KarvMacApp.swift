@@ -212,21 +212,6 @@ final class MacSyncCoordinator {
     }
     var tokenShareStatus: String?
 
-    /// Opt-in: read real Gemini quota using Antigravity's sign-in (see AntigravityQuotaReader).
-    var useAntigravityQuota: Bool {
-        didSet {
-            UserDefaults.standard.set(useAntigravityQuota, forKey: "karv.mac.useAntigravityQuota")
-            antigravityAccessDenied = false
-            antigravityPausedUntil = .distantPast
-            if !useAntigravityQuota {
-                lastLiveGemini = nil
-                antigravityStatus = nil
-            }
-            syncNow()
-        }
-    }
-    var antigravityStatus: String?
-
     /// Pace daily/weekly windows by when you usually work (learned from real readings)
     /// instead of an even burn around the clock.
     var paceByRhythm: Bool {
@@ -257,12 +242,6 @@ final class MacSyncCoordinator {
     private var timerTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
     private var lastLiveClaude: ProviderUsageSnapshot?
-    private var lastLiveGemini: ProviderUsageSnapshot?
-    /// After the user declines the Keychain prompt, stop asking until they toggle again.
-    private var antigravityAccessDenied = false
-    /// After Google rejects the request, wait before trying again instead of
-    /// sending failing requests every minute.
-    private var antigravityPausedUntil: Date = .distantPast
     /// A windowless menu-bar app gets App Napped, which stretches the 1-minute
     /// `Task.sleep` to many minutes. Holding this activity opts out (sleep is still allowed).
     private let appNapActivity = ProcessInfo.processInfo.beginActivity(
@@ -276,12 +255,13 @@ final class MacSyncCoordinator {
         // Seed "last real reading" from what was saved, so a restart doesn't drop the
         // Mac back to the rough estimate until the next successful API call.
         self.lastLiveClaude = Self.realReading(.claude, in: syncStore.snapshot)
-        self.lastLiveGemini = Self.realReading(.gemini, in: syncStore.snapshot)
         let savedBudget = UserDefaults.standard.double(forKey: "karv.mac.geminiBudget")
         self.geminiSessionBudget = savedBudget >= 20 ? savedBudget : 100.0
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
         self.shareClaudeTokenWithIPhone = UserDefaults.standard.object(forKey: "karv.mac.shareClaudeToken") as? Bool ?? true
-        self.useAntigravityQuota = UserDefaults.standard.bool(forKey: "karv.mac.useAntigravityQuota")
+        // The Antigravity quota experiment was removed (Google rejects the call);
+        // drop its old setting.
+        UserDefaults.standard.removeObject(forKey: "karv.mac.useAntigravityQuota")
         let defaults = UserDefaults.standard
         self.paceByRhythm = defaults.object(forKey: "karv.mac.paceByRhythm") as? Bool ?? true
         self.activeStartHour = defaults.object(forKey: "karv.mac.activeStartHour") as? Int ?? 8
@@ -308,18 +288,10 @@ final class MacSyncCoordinator {
         isSyncing = true
         let budget = geminiSessionBudget
         let lastLive = lastLiveClaude
-        let lastGemini = lastLiveGemini
-        let readAntigravity = useAntigravityQuota && !antigravityAccessDenied && Date() >= antigravityPausedUntil
         Task {
-            let antigravity = readAntigravity ? await AntigravityQuotaReader.fetch() : nil
-            if let antigravity {
-                updateAntigravityStatus(antigravity)
-            }
             let collected = await collector.collectSnapshot(
                 geminiSessionBudget: budget,
-                lastLiveClaude: lastLive,
-                antigravity: antigravity,
-                lastLiveGemini: lastGemini
+                lastLiveClaude: lastLive
             )
             // Merge rather than replace: a real reading (e.g. the iPhone's direct Claude
             // fetch) beats this Mac's estimate; the newer of two real readings wins.
@@ -329,9 +301,6 @@ final class MacSyncCoordinator {
             }
             store.publish(merged)
             lastLiveClaude = Self.realReading(.claude, in: merged) ?? lastLiveClaude
-            if useAntigravityQuota {
-                lastLiveGemini = Self.realReading(.gemini, in: merged) ?? lastLiveGemini
-            }
             shareClaudeTokenIfChanged()
             bonjourServer.update(snapshot: merged)
             KarvNotificationScheduler.scheduleAlerts(for: merged, preferences: store.preferences)
@@ -388,23 +357,6 @@ final class MacSyncCoordinator {
               item.isConnected, !item.isEstimate,
               item.primaryWindow.resetsAt > Date() else { return nil }
         return item
-    }
-
-    private func updateAntigravityStatus(_ outcome: AntigravityQuotaReader.Outcome) {
-        switch outcome {
-        case .success:
-            antigravityStatus = "Live Gemini quota from Antigravity"
-        case .tokenExpired:
-            antigravityStatus = "Waiting for Antigravity to run (sign-in expired)"
-        case .noCredentials:
-            antigravityStatus = "Not signed in to Antigravity"
-        case .accessDenied:
-            antigravityAccessDenied = true
-            antigravityStatus = "Keychain access denied — toggle off and on to ask again"
-        case let .failed(message):
-            antigravityPausedUntil = Date().addingTimeInterval(3600)
-            antigravityStatus = "\(message) — retrying in 1h; showing estimate"
-        }
     }
 
     func claudePairingURLString() -> String? {
@@ -658,16 +610,6 @@ struct MenuBarPopoverView: View {
                     Spacer()
                 }
                 HStack {
-                    Toggle(isOn: $coordinator.useAntigravityQuota) {
-                        Text("Real Gemini quota from Antigravity (uses its sign-in, read-only)")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(secondaryText)
-                    }
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    Spacer()
-                }
-                HStack {
                     Toggle(isOn: $coordinator.paceByRhythm) {
                         Text("Pace by my daily rhythm (quiet evenings count less)")
                             .font(.system(size: 11, weight: .medium))
@@ -697,13 +639,6 @@ struct MenuBarPopoverView: View {
                         }
                         .controlSize(.mini)
                     }
-                }
-
-                if coordinator.useAntigravityQuota, let status = coordinator.antigravityStatus {
-                    Text(status)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(secondaryText.opacity(0.65))
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 if let status = coordinator.tokenShareStatus {

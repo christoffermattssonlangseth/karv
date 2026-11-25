@@ -17,7 +17,6 @@
 		754B88150AC34756B0D03E0C /* KarvWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64E6A563D58D19C8DF212420 /* KarvWidget.swift */; };
 		75962DF81AF29AD5F008ABBA /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */; };
 		77DE89E84B28C22A4545F041 /* MacBonjourSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */; };
-		87A7FCFFF13BBFC330544599 /* AntigravityQuotaReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 217368D63AC84C656995A927 /* AntigravityQuotaReader.swift */; };
 		8B2A3054E05015E4B1F98F84 /* LocalUsageCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */; };
 		9392FF2972C2ED2917DB6A37 /* KarvWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6874189EB03554A2F613926 /* KarvWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A8BC618DDA61F6C229128977 /* ProviderDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */; };
@@ -59,7 +58,6 @@
 		083B2131A686B876E131DC5F /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		0F65FAB30E8BC97140C9488A /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacBonjourSyncClient.swift; sourceTree = "<group>"; };
-		217368D63AC84C656995A927 /* AntigravityQuotaReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AntigravityQuotaReader.swift; sourceTree = "<group>"; };
 		2838B690764964F35D3B6C51 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		39402182AEDB32E93A6B142E /* KarvMacApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KarvMacApp.swift; sourceTree = "<group>"; };
 		477A5639E5E25FF9CC6FF576 /* Karv.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Karv.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -129,7 +127,6 @@
 		83EB541A922FAB8C02EF9B28 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
-				217368D63AC84C656995A927 /* AntigravityQuotaReader.swift */,
 				39402182AEDB32E93A6B142E /* KarvMacApp.swift */,
 				9B652BDB546ADDE11939DB2B /* LocalBonjourSyncServer.swift */,
 				A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */,
@@ -316,7 +313,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				87A7FCFFF13BBFC330544599 /* AntigravityQuotaReader.swift in Sources */,
 				EC65EDA4259CEC5F4D14D1F8 /* KarvMacApp.swift in Sources */,
 				2925AC689890F275D67397E1 /* LocalBonjourSyncServer.swift in Sources */,
 				8B2A3054E05015E4B1F98F84 /* LocalUsageCollector.swift in Sources */,
