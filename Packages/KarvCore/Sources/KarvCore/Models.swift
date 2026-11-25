@@ -257,17 +257,21 @@ public struct KarvSnapshot: Codable, Hashable, Sendable {
     public var sourceDeviceName: String
     public var updatedAt: Date
     public var isDemoData: Bool
+    /// Learned on KarvMac and synced with the readings; drives rhythm-aware pacing.
+    public var rhythm: UsageRhythm?
 
     public init(
         providers: [ProviderUsageSnapshot],
         sourceDeviceName: String,
         updatedAt: Date = Date(),
-        isDemoData: Bool = false
+        isDemoData: Bool = false,
+        rhythm: UsageRhythm? = nil
     ) {
         self.providers = providers
         self.sourceDeviceName = sourceDeviceName
         self.updatedAt = updatedAt
         self.isDemoData = isDemoData
+        self.rhythm = rhythm
     }
 
     public func snapshot(for provider: AIProvider) -> ProviderUsageSnapshot? {
@@ -346,8 +350,15 @@ public struct KarvSnapshot: Codable, Hashable, Sendable {
             providers: result,
             sourceDeviceName: incomingIsNewer ? incoming.sourceDeviceName : sourceDeviceName,
             updatedAt: max(updatedAt, incoming.updatedAt),
-            isDemoData: isDemoData
+            isDemoData: isDemoData,
+            rhythm: Self.newerRhythm(rhythm, incoming.rhythm)
         )
+    }
+
+    static func newerRhythm(_ a: UsageRhythm?, _ b: UsageRhythm?) -> UsageRhythm? {
+        guard let a else { return b }
+        guard let b else { return a }
+        return b.updatedAt > a.updatedAt ? b : a
     }
 
     public var averageRemainingPercent: Double {

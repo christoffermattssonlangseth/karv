@@ -12,12 +12,42 @@ public struct QuotaPace: Sendable, Equatable {
     public let usedFraction: Double
     public let windowDuration: TimeInterval
     public let resetsAt: Date
+    /// When set, "elapsed" is the share of your typical activity for this window that has
+    /// passed, rather than the share of clock time.
+    public let rhythm: UsageRhythm?
+
+    public init(
+        elapsedFraction: Double,
+        usedFraction: Double,
+        windowDuration: TimeInterval,
+        resetsAt: Date,
+        rhythm: UsageRhythm? = nil
+    ) {
+        self.elapsedFraction = elapsedFraction
+        self.usedFraction = usedFraction
+        self.windowDuration = windowDuration
+        self.resetsAt = resetsAt
+        self.rhythm = rhythm
+    }
+
+    public var isRhythmAdjusted: Bool { rhythm != nil }
+
+    var windowStart: Date { resetsAt.addingTimeInterval(-windowDuration) }
 
     /// elapsed − used. Positive = reserve, negative = over pace.
     public var reserve: Double { elapsedFraction - usedFraction }
 
-    /// Reserve expressed as time ahead of (positive) or behind (negative) an even pace.
-    public var reserveTime: TimeInterval { reserve * windowDuration }
+    /// Reserve expressed as time ahead of (positive) or behind (negative) the expected pace:
+    /// how long ago (or from now) a typical window would have reached today's usage.
+    public var reserveTime: TimeInterval {
+        guard let rhythm else { return reserve * windowDuration }
+        let calendar = Calendar.current
+        let w = rhythm.weights()
+        let total = rhythm.activity(from: windowStart, to: resetsAt, weights: w, calendar: calendar)
+        let now = rhythm.date(reaching: elapsedFraction * total, from: windowStart, limit: resetsAt, weights: w, calendar: calendar) ?? resetsAt
+        let reached = rhythm.date(reaching: usedFraction * total, from: windowStart, limit: resetsAt, weights: w, calendar: calendar) ?? resetsAt
+        return now.timeIntervalSince(reached)
+    }
 
     /// Treat anything within ±2% as on pace, matching the ring tick colouring.
     public var state: State {
@@ -41,6 +71,17 @@ public struct QuotaPace: Sendable, Equatable {
 
     /// When the quota runs out at the current average rate, if that is before the reset.
     public func projectedExhaustion(now: Date = Date()) -> Date? {
+        if let rhythm {
+            // Keep the quota-per-activity rate so far, and let quiet hours stay quiet.
+            guard usedFraction > 0, usedFraction < 1, elapsedFraction > 0,
+                  now.timeIntervalSince(windowStart) >= 60 else { return nil }
+            let calendar = Calendar.current
+            let w = rhythm.weights()
+            let total = rhythm.activity(from: windowStart, to: resetsAt, weights: w, calendar: calendar)
+            let needed = elapsedFraction * total / usedFraction
+            guard needed < total else { return nil }
+            return rhythm.date(reaching: needed, from: windowStart, limit: resetsAt, weights: w, calendar: calendar)
+        }
         let elapsedSeconds = elapsedFraction * windowDuration
         guard usedFraction > 0, usedFraction < 1, elapsedSeconds >= 60 else { return nil }
         let ratePerSecond = usedFraction / elapsedSeconds
@@ -61,8 +102,26 @@ extension QuotaWindow {
         }
     }
 
-    public func pace(at now: Date = Date(), isSecondary: Bool) -> QuotaPace {
+    /// - Parameter rhythm: your usage rhythm; defaults to the one synced from KarvMac.
+    ///   Only used for windows of a day or longer; a 5h session keeps an even pace.
+    public func pace(at now: Date = Date(), isSecondary: Bool, rhythm: UsageRhythm? = UsageRhythm.active) -> QuotaPace {
         let duration = windowDuration(isSecondary: isSecondary)
+        if !isRolling, let rhythm, duration >= 24 * 3600 {
+            let start = resetsAt.addingTimeInterval(-duration)
+            let calendar = Calendar.current
+            let w = rhythm.weights()
+            let total = rhythm.activity(from: start, to: resetsAt, weights: w, calendar: calendar)
+            let done = rhythm.activity(from: start, to: min(max(now, start), resetsAt), weights: w, calendar: calendar)
+            if total > 0 {
+                return QuotaPace(
+                    elapsedFraction: min(max(done / total, 0), 1),
+                    usedFraction: usedPercent,
+                    windowDuration: duration,
+                    resetsAt: resetsAt,
+                    rhythm: rhythm
+                )
+            }
+        }
         // A rolling window never "resets", so there is no elapsed share to pace against.
         // Treat it as on pace; callers show headroom for these instead.
         let elapsed: Double
@@ -91,14 +150,14 @@ extension QuotaWindow {
 
     /// One-line reserve summary shared by the iPhone tiles and the Mac popover, e.g.
     /// "15% reserve · 45m", "8% over · out in 1h 10m", "Rolling · frees up in 23m".
-    public func reserveSummary(at now: Date = Date(), isSecondary: Bool) -> (text: String, tone: ReserveTone) {
+    public func reserveSummary(at now: Date = Date(), isSecondary: Bool, rhythm: UsageRhythm? = UsageRhythm.active) -> (text: String, tone: ReserveTone) {
         if isRolling {
             if usedPercent > 0, resetsAt > now {
                 return ("Rolling · frees up in \(KarvFormatting.durationString(resetsAt.timeIntervalSince(now)))", .neutral)
             }
             return ("Rolling · no recent use", .neutral)
         }
-        let pace = pace(at: now, isSecondary: isSecondary)
+        let pace = pace(at: now, isSecondary: isSecondary, rhythm: rhythm)
         let pct = KarvFormatting.percentString(abs(pace.reserve))
         switch pace.state {
         case .onPace:

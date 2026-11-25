@@ -227,6 +227,30 @@ final class MacSyncCoordinator {
     }
     var antigravityStatus: String?
 
+    /// Pace daily/weekly windows by when you usually work (learned from real readings)
+    /// instead of an even burn around the clock.
+    var paceByRhythm: Bool {
+        didSet {
+            UserDefaults.standard.set(paceByRhythm, forKey: "karv.mac.paceByRhythm")
+            applyRhythmSettings()
+        }
+    }
+    var activeStartHour: Int {
+        didSet {
+            UserDefaults.standard.set(activeStartHour, forKey: "karv.mac.activeStartHour")
+            applyRhythmSettings()
+        }
+    }
+    var activeEndHour: Int {
+        didSet {
+            UserDefaults.standard.set(activeEndHour, forKey: "karv.mac.activeEndHour")
+            applyRhythmSettings()
+        }
+    }
+    var rhythmStatus: String {
+        (store.snapshot.rhythm ?? UsageRhythm(isEnabled: paceByRhythm)).statusText()
+    }
+
     private let store: KarvSyncStore
     private let collector = LocalUsageCollector()
     private let bonjourServer = LocalBonjourSyncServer()
@@ -258,6 +282,10 @@ final class MacSyncCoordinator {
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
         self.shareClaudeTokenWithIPhone = UserDefaults.standard.object(forKey: "karv.mac.shareClaudeToken") as? Bool ?? true
         self.useAntigravityQuota = UserDefaults.standard.bool(forKey: "karv.mac.useAntigravityQuota")
+        let defaults = UserDefaults.standard
+        self.paceByRhythm = defaults.object(forKey: "karv.mac.paceByRhythm") as? Bool ?? true
+        self.activeStartHour = defaults.object(forKey: "karv.mac.activeStartHour") as? Int ?? 8
+        self.activeEndHour = defaults.object(forKey: "karv.mac.activeEndHour") as? Int ?? 20
 
         bonjourServer.start(initialSnapshot: syncStore.snapshot)
         Task {
@@ -295,7 +323,10 @@ final class MacSyncCoordinator {
             )
             // Merge rather than replace: a real reading (e.g. the iPhone's direct Claude
             // fetch) beats this Mac's estimate; the newer of two real readings wins.
-            let merged = store.snapshot.isDemoData ? collected : store.snapshot.merged(with: collected)
+            var merged = store.snapshot.isDemoData ? collected : store.snapshot.merged(with: collected)
+            if !merged.isDemoData {
+                merged.rhythm = learnedRhythm(from: merged)
+            }
             store.publish(merged)
             lastLiveClaude = Self.realReading(.claude, in: merged) ?? lastLiveClaude
             if useAntigravityQuota {
@@ -306,6 +337,30 @@ final class MacSyncCoordinator {
             KarvNotificationScheduler.scheduleAlerts(for: merged, preferences: store.preferences)
             isSyncing = false
         }
+    }
+
+    /// The usage rhythm with the current settings, after folding in this snapshot's readings.
+    private func learnedRhythm(from snapshot: KarvSnapshot) -> UsageRhythm {
+        var rhythm = snapshot.rhythm ?? UsageRhythm()
+        rhythm.isEnabled = paceByRhythm
+        rhythm.activeStartHour = activeStartHour
+        rhythm.activeEndHour = activeEndHour
+        rhythm.learn(from: snapshot)
+        return rhythm
+    }
+
+    /// Republishes immediately so the pace on all devices follows a settings change.
+    private func applyRhythmSettings() {
+        var updated = store.snapshot
+        guard !updated.isDemoData else { return }
+        var rhythm = updated.rhythm ?? UsageRhythm()
+        rhythm.isEnabled = paceByRhythm
+        rhythm.activeStartHour = activeStartHour
+        rhythm.activeEndHour = activeEndHour
+        rhythm.updatedAt = Date()
+        updated.rhythm = rhythm
+        store.publish(updated)
+        bonjourServer.update(snapshot: updated)
     }
 
     /// Claude Code refreshes its access token every few hours; push each new one to the
@@ -460,6 +515,11 @@ struct MenuBarPopoverView: View {
                         ForEach(connectedProviders) { item in
                             MacProviderQuotaCard(item: item, now: context.date)
                         }
+                        Text(coordinator.rhythmStatus)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(secondaryText.opacity(0.7))
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 2)
                     }
                 }
 
@@ -607,6 +667,38 @@ struct MenuBarPopoverView: View {
                     .controlSize(.mini)
                     Spacer()
                 }
+                HStack {
+                    Toggle(isOn: $coordinator.paceByRhythm) {
+                        Text("Pace by my daily rhythm (quiet evenings count less)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    Spacer()
+                }
+                if coordinator.paceByRhythm {
+                    HStack(spacing: 6) {
+                        Text("Usual active hours")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                        Spacer()
+                        Stepper(value: $coordinator.activeStartHour, in: 0...23) {
+                            Text(String(format: "%02d:00", coordinator.activeStartHour))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(primaryText)
+                        }
+                        .controlSize(.mini)
+                        Text("–").foregroundStyle(secondaryText)
+                        Stepper(value: $coordinator.activeEndHour, in: 0...23) {
+                            Text(String(format: "%02d:00", coordinator.activeEndHour))
+                                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                                .foregroundStyle(primaryText)
+                        }
+                        .controlSize(.mini)
+                    }
+                }
+
                 if coordinator.useAntigravityQuota, let status = coordinator.antigravityStatus {
                     Text(status)
                         .font(.system(size: 10, design: .monospaced))

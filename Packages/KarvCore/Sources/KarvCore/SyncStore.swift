@@ -47,7 +47,9 @@ public struct KarvPreferences: Codable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class KarvSyncStore {
-    public private(set) var snapshot: KarvSnapshot
+    public private(set) var snapshot: KarvSnapshot {
+        didSet { UsageRhythm.current = snapshot.rhythm }
+    }
     public var preferences: KarvPreferences {
         didSet {
             savePreferences()
@@ -87,6 +89,8 @@ public final class KarvSyncStore {
             self.snapshot = demo
             Self.writeSnapshot(demo, to: UserDefaults(suiteName: KarvIdentifiers.appGroupID), local: .standard)
         }
+
+        UsageRhythm.current = snapshot.rhythm
 
         if enableCloudSync {
             startObservingCloud()
@@ -308,6 +312,7 @@ public final class KarvSyncStore {
             appGroup: UserDefaults(suiteName: KarvIdentifiers.appGroupID),
             local: .standard
         ) ?? KarvDemoData.makeSnapshot()
+        UsageRhythm.current = raw.rhythm
 
         let filtered = raw.providers.filter { item in
             prefs.isEnabled(item.provider) && (raw.isDemoData || item.isConnected)
@@ -316,7 +321,8 @@ public final class KarvSyncStore {
             providers: filtered,
             sourceDeviceName: raw.sourceDeviceName,
             updatedAt: raw.updatedAt,
-            isDemoData: raw.isDemoData
+            isDemoData: raw.isDemoData,
+            rhythm: raw.rhythm
         )
     }
 

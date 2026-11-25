@@ -97,7 +97,7 @@ private func provider(_ p: AIProvider, used: Double, at date: Date) -> ProviderU
 
     // Weekly, 1 day elapsed (~14%), 50% used → over pace, runs out before reset.
     let over = QuotaWindow(id: "w", title: "Weekly Cap", subtitle: "", usedPercent: 0.5, resetsAt: now.addingTimeInterval(6 * 86400))
-    let p2 = over.pace(at: now, isSecondary: true)
+    let p2 = over.pace(at: now, isSecondary: true, rhythm: nil)
     #expect(p2.state == .overPace)
     let empty = try! #require(p2.projectedExhaustion(now: now))
     #expect(abs(empty.timeIntervalSince(now) - 86400) < 1) // same rate for one more day
@@ -158,4 +158,92 @@ private func provider(_ p: AIProvider, used: Double, at date: Date) -> ProviderU
     json["providers"] = providers
     let decoded = try JSONDecoder().decode(KarvSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
     #expect(decoded.providers.allSatisfy { !$0.isEstimate && !$0.primaryWindow.isRolling })
+}
+
+// MARK: - Usage rhythm
+
+/// A weekday at the given local hour.
+private func weekday(hour: Int, minute: Int = 0) -> Date {
+    var c = DateComponents()
+    c.year = 2026; c.month = 11; c.day = 25 // a Wednesday
+    c.hour = hour; c.minute = minute
+    return Calendar.current.date(from: c)!
+}
+
+private func claudeReading(used: Double, at date: Date, resetsAt: Date) -> KarvSnapshot {
+    let item = ProviderUsageSnapshot(
+        provider: .claude,
+        planName: "Max",
+        isConnected: true,
+        primaryWindow: QuotaWindow(id: "claude-5h", title: "5h Session", subtitle: "", usedPercent: 0.1, resetsAt: date.addingTimeInterval(3600)),
+        secondaryWindow: QuotaWindow(id: "claude-weekly", title: "Weekly Cap", subtitle: "", usedPercent: used, resetsAt: resetsAt),
+        lastSyncedAt: date,
+        source: .claudeCLI
+    )
+    return KarvSnapshot(providers: [item], sourceDeviceName: "Mac", updatedAt: date)
+}
+
+@Test func rhythmLearnsBusyAndQuietHours() {
+    let resets = weekday(hour: 12).addingTimeInterval(5 * 86400)
+    var rhythm = UsageRhythm(activeStartHour: 0, activeEndHour: 0) // flat prior
+    var used = 0.2
+    // 09–17 busy (+1% every 10 min), 17–23 idle, sampled every 10 minutes.
+    var t = weekday(hour: 9)
+    while t < weekday(hour: 23) {
+        if t < weekday(hour: 17) { used += 0.01 }
+        rhythm.learn(from: claudeReading(used: used, at: t, resetsAt: resets), now: t)
+        t = t.addingTimeInterval(600)
+    }
+    let w = rhythm.weights()
+    // One day of data already tilts the curve; the prior still holds it back.
+    #expect(w[10] > 1.5 * w[21])
+    #expect(rhythm.learningSince != nil)
+
+    // A long gap (Mac asleep) is skipped instead of being smeared over the night.
+    let morning = weekday(hour: 23).addingTimeInterval(8 * 3600)
+    rhythm.learn(from: claudeReading(used: used + 0.1, at: morning, resetsAt: resets), now: morning)
+    #expect(rhythm.usage[2] == 0 && rhythm.observed[2] == 0)
+}
+
+@Test func rhythmSlowsPaceInQuietHours() {
+    let rhythm = UsageRhythm(activeStartHour: 8, activeEndHour: 20)
+    let resets = weekday(hour: 9).addingTimeInterval(3 * 86400)
+    let window = QuotaWindow(id: "w", title: "Weekly Cap", subtitle: "", usedPercent: 0.6, resetsAt: resets)
+
+    // Over the quiet evening the expected share barely moves; during the day it moves a lot.
+    let evening = window.pace(at: weekday(hour: 23), isSecondary: true, rhythm: rhythm).elapsedFraction
+        - window.pace(at: weekday(hour: 20), isSecondary: true, rhythm: rhythm).elapsedFraction
+    let day = window.pace(at: weekday(hour: 16), isSecondary: true, rhythm: rhythm).elapsedFraction
+        - window.pace(at: weekday(hour: 13), isSecondary: true, rhythm: rhythm).elapsedFraction
+    #expect(evening < day / 3)
+
+    // Running out: the even-rate forecast ignores that you slow down; the rhythm one doesn't.
+    let now = weekday(hour: 19)
+    let linear = window.pace(at: now, isSecondary: true, rhythm: nil)
+    let adjusted = window.pace(at: now, isSecondary: true, rhythm: rhythm)
+    #expect(adjusted.isRhythmAdjusted)
+    if let a = adjusted.projectedExhaustion(now: now), let l = linear.projectedExhaustion(now: now) {
+        #expect(a > l)
+    }
+
+    // A 5h session keeps an even pace.
+    let session = QuotaWindow(id: "s", title: "5h Session", subtitle: "", usedPercent: 0.3, resetsAt: weekday(hour: 22))
+    #expect(!session.pace(at: weekday(hour: 20), isSecondary: false, rhythm: rhythm).isRhythmAdjusted)
+}
+
+@Test func rhythmSurvivesMergeAndOldPayloads() throws {
+    let now = Date()
+    var older = UsageRhythm(now: now.addingTimeInterval(-60))
+    older.activeStartHour = 7
+    let newer = UsageRhythm(now: now)
+    let a = KarvSnapshot(providers: [], sourceDeviceName: "Mac", updatedAt: now, rhythm: older)
+    let b = KarvSnapshot(providers: [], sourceDeviceName: "iPhone", updatedAt: now, rhythm: nil)
+    #expect(a.merged(with: b).rhythm == older)
+    #expect(b.merged(with: a).rhythm == older)
+    let c = KarvSnapshot(providers: [], sourceDeviceName: "Mac", updatedAt: now, rhythm: newer)
+    #expect(a.merged(with: c).rhythm == newer)
+
+    let legacy = #"{"providers":[],"sourceDeviceName":"Mac","updatedAt":0,"isDemoData":false}"#
+    let decoded = try JSONDecoder().decode(KarvSnapshot.self, from: Data(legacy.utf8))
+    #expect(decoded.rhythm == nil)
 }

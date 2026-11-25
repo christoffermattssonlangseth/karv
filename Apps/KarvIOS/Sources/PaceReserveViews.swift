@@ -159,18 +159,22 @@ struct PaceReserveDetail: View {
     private func explanation(for pace: QuotaPace) -> String {
         let elapsed = KarvFormatting.percentString(pace.elapsedFraction)
         let used = KarvFormatting.percentString(pace.usedFraction)
-        var parts = ["\(elapsed) of the window has passed and you've used \(used)."]
+        let rhythmNote = pace.rhythm.map { " (\($0.statusText(now: now).lowercased()))" } ?? ""
+        var parts = pace.isRhythmAdjusted
+            ? ["By now you'd usually have done \(elapsed) of this window's work\(rhythmNote), and you've used \(used)."]
+            : ["\(elapsed) of the window has passed and you've used \(used)."]
+        let benchmark = pace.isRhythmAdjusted ? "your usual pace" : "an even burn"
 
         switch pace.state {
         case .underPace:
-            parts.append("That's about \(KarvFormatting.durationString(pace.reserveTime)) of headroom ahead of an even burn.")
+            parts.append("That's about \(KarvFormatting.durationString(pace.reserveTime)) of headroom ahead of \(benchmark).")
         case .onPace:
             break
         case .overPace:
             if let empty = pace.projectedExhaustion(now: now) {
                 parts.append("At this rate you'll run out in \(KarvFormatting.durationString(empty.timeIntervalSince(now))), \(KarvFormatting.durationString(pace.resetsAt.timeIntervalSince(empty))) before the reset.")
             } else {
-                parts.append("You've used about \(KarvFormatting.durationString(-pace.reserveTime)) worth more than an even burn would by now.")
+                parts.append("You've used about \(KarvFormatting.durationString(-pace.reserveTime)) worth more than \(benchmark) would by now.")
             }
         }
         if pace.state != .overPace || pace.projectedExhaustion(now: now) == nil,
