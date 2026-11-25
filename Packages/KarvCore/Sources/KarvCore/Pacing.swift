@@ -84,6 +84,34 @@ extension QuotaWindow {
 extension QuotaWindow {
     /// "resets" for fixed windows, "frees up" for rolling ones (usage ages out).
     public var resetVerb: String { isRolling ? "frees up" : "resets" }
+
+    public enum ReserveTone: Sendable {
+        case good, neutral, bad
+    }
+
+    /// One-line reserve summary shared by the iPhone tiles and the Mac popover, e.g.
+    /// "15% reserve · 45m", "8% over · out in 1h 10m", "Rolling · frees up in 23m".
+    public func reserveSummary(at now: Date = Date(), isSecondary: Bool) -> (text: String, tone: ReserveTone) {
+        if isRolling {
+            if usedPercent > 0, resetsAt > now {
+                return ("Rolling · frees up in \(KarvFormatting.durationString(resetsAt.timeIntervalSince(now)))", .neutral)
+            }
+            return ("Rolling · no recent use", .neutral)
+        }
+        let pace = pace(at: now, isSecondary: isSecondary)
+        let pct = KarvFormatting.percentString(abs(pace.reserve))
+        switch pace.state {
+        case .onPace:
+            return ("On pace", .neutral)
+        case .underPace:
+            return ("\(pct) reserve · \(KarvFormatting.durationString(pace.reserveTime))", .good)
+        case .overPace:
+            if let empty = pace.projectedExhaustion(now: now) {
+                return ("\(pct) over · out in \(KarvFormatting.durationString(empty.timeIntervalSince(now)))", .bad)
+            }
+            return ("\(pct) over pace", .bad)
+        }
+    }
 }
 
 extension KarvFormatting {

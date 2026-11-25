@@ -209,12 +209,29 @@ final class MacSyncCoordinator {
     }
     var tokenShareStatus: String?
 
+    /// Opt-in: read real Gemini quota using Antigravity's sign-in (see AntigravityQuotaReader).
+    var useAntigravityQuota: Bool {
+        didSet {
+            UserDefaults.standard.set(useAntigravityQuota, forKey: "karv.mac.useAntigravityQuota")
+            antigravityAccessDenied = false
+            if !useAntigravityQuota {
+                lastLiveGemini = nil
+                antigravityStatus = nil
+            }
+            syncNow()
+        }
+    }
+    var antigravityStatus: String?
+
     private let store: KarvSyncStore
     private let collector = LocalUsageCollector()
     private let bonjourServer = LocalBonjourSyncServer()
     private var timerTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
     private var lastLiveClaude: ProviderUsageSnapshot?
+    private var lastLiveGemini: ProviderUsageSnapshot?
+    /// After the user declines the Keychain prompt, stop asking until they toggle again.
+    private var antigravityAccessDenied = false
     /// A windowless menu-bar app gets App Napped, which stretches the 1-minute
     /// `Task.sleep` to many minutes. Holding this activity opts out (sleep is still allowed).
     private let appNapActivity = ProcessInfo.processInfo.beginActivity(
@@ -230,6 +247,7 @@ final class MacSyncCoordinator {
         self.geminiSessionBudget = savedBudget >= 20 ? savedBudget : 100.0
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
         self.shareClaudeTokenWithIPhone = UserDefaults.standard.object(forKey: "karv.mac.shareClaudeToken") as? Bool ?? true
+        self.useAntigravityQuota = UserDefaults.standard.bool(forKey: "karv.mac.useAntigravityQuota")
 
         bonjourServer.start(initialSnapshot: syncStore.snapshot)
         Task {
@@ -252,10 +270,24 @@ final class MacSyncCoordinator {
         isSyncing = true
         let budget = geminiSessionBudget
         let lastLive = lastLiveClaude
+        let lastGemini = lastLiveGemini
+        let readAntigravity = useAntigravityQuota && !antigravityAccessDenied
         Task {
-            let collected = await collector.collectSnapshot(geminiSessionBudget: budget, lastLiveClaude: lastLive)
+            let antigravity = readAntigravity ? await AntigravityQuotaReader.fetch() : nil
+            if let antigravity {
+                updateAntigravityStatus(antigravity)
+            }
+            let collected = await collector.collectSnapshot(
+                geminiSessionBudget: budget,
+                lastLiveClaude: lastLive,
+                antigravity: antigravity,
+                lastLiveGemini: lastGemini
+            )
             if let claude = collected.snapshot(for: .claude), claude.primaryWindow.subtitle == LocalUsageCollector.liveClaudeSubtitle {
                 lastLiveClaude = claude
+            }
+            if let gemini = collected.snapshot(for: .gemini), gemini.primaryWindow.subtitle == LocalUsageCollector.liveGeminiSubtitle {
+                lastLiveGemini = gemini
             }
             store.publish(collected)
             shareClaudeTokenIfChanged()
@@ -281,6 +313,22 @@ final class MacSyncCoordinator {
             tokenShareStatus = "Claude token shared with iPhone"
         } else {
             tokenShareStatus = "Couldn't write to iCloud Keychain — use QR pairing"
+        }
+    }
+
+    private func updateAntigravityStatus(_ outcome: AntigravityQuotaReader.Outcome) {
+        switch outcome {
+        case .success:
+            antigravityStatus = "Live Gemini quota from Antigravity"
+        case .tokenExpired:
+            antigravityStatus = "Waiting for Antigravity to run (sign-in expired)"
+        case .noCredentials:
+            antigravityStatus = "Not signed in to Antigravity"
+        case .accessDenied:
+            antigravityAccessDenied = true
+            antigravityStatus = "Keychain access denied — toggle off and on to ask again"
+        case let .failed(message):
+            antigravityStatus = message
         }
     }
 
@@ -384,74 +432,15 @@ struct MenuBarPopoverView: View {
 
             Divider().overlay(Color.white.opacity(0.10))
 
+            // Remaining quota and reserve per window, front and center. Refreshes every
+            // 30s so countdowns and pace stay live between syncs.
             VStack(spacing: 10) {
-                ForEach(connectedProviders) { item in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Circle()
-                                .fill(item.provider.accentColor)
-                                .frame(width: 7, height: 7)
-                            Text(item.provider.displayName)
-                                .font(.system(size: 13, weight: .semibold))
-                                .foregroundStyle(primaryText)
-                            Text(item.planName.uppercased())
-                                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                                .foregroundStyle(item.provider.accentColor)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(item.provider.accentColor.opacity(0.16), in: Capsule())
-
-                            Spacer()
-
-                            Text("\(KarvFormatting.percentString(item.primaryWindow.remainingPercent)) left")
-                                .font(.system(size: 12, weight: .bold, design: .monospaced))
-                                .foregroundStyle(primaryText)
-                        }
-
-                        ProgressView(value: item.primaryWindow.usedPercent)
-                            .tint(item.provider.accentColor)
-
-                        HStack {
-                            Text(item.primaryWindow.title)
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(secondaryText)
-                            Spacer()
-                            Text("\(item.primaryWindow.resetVerb.capitalized) \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt))\(item.isEstimate ? " · est." : "")")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundStyle(secondaryText)
-                        }
-
-                        if let secondary = item.secondaryWindow {
-                            Divider().overlay(Color.white.opacity(0.08))
-                            HStack(spacing: 8) {
-                                Text(secondary.title)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(secondaryText)
-                                ProgressView(value: secondary.usedPercent)
-                                    .tint(item.provider.secondaryAccentColor.opacity(0.85))
-                                    .frame(maxWidth: 80)
-                                Spacer()
-                                Text("\(KarvFormatting.percentString(secondary.remainingPercent)) left")
-                                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
-                                    .foregroundStyle(primaryText)
-                                Text("· \(KarvFormatting.countdownString(until: secondary.resetsAt))")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundStyle(secondaryText)
-                            }
-                        }
-
-                        if let note = item.statusNote {
-                            Text(note)
-                                .font(.system(size: 10))
-                                .foregroundStyle(secondaryText.opacity(0.8))
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    VStack(spacing: 10) {
+                        ForEach(connectedProviders) { item in
+                            MacProviderQuotaCard(item: item, now: context.date)
                         }
                     }
-                    .padding(12)
-                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                    )
                 }
 
                 if !disconnectedNames.isEmpty {
@@ -588,6 +577,23 @@ struct MenuBarPopoverView: View {
                     .controlSize(.mini)
                     Spacer()
                 }
+                HStack {
+                    Toggle(isOn: $coordinator.useAntigravityQuota) {
+                        Text("Real Gemini quota from Antigravity (uses its sign-in, read-only)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    Spacer()
+                }
+                if coordinator.useAntigravityQuota, let status = coordinator.antigravityStatus {
+                    Text(status)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(secondaryText.opacity(0.65))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
                 if let status = coordinator.tokenShareStatus {
                     Text(status)
                         .font(.system(size: 10, design: .monospaced))
@@ -610,8 +616,157 @@ struct MenuBarPopoverView: View {
             }
         }
         .padding(14)
-        .frame(width: 320)
+        .frame(width: 340)
         .background(Color(red: 0.055, green: 0.055, blue: 0.067))
         .environment(\.colorScheme, .dark)
+    }
+}
+
+
+// MARK: - Provider quota card
+
+/// One provider in the popover: session/daily and weekly side by side, each with what's
+/// left, an even-pace marker, the reserve (or overspend) and the reset countdown.
+struct MacProviderQuotaCard: View {
+    let item: ProviderUsageSnapshot
+    let now: Date
+
+    private let primaryText = Color(red: 0.98, green: 0.98, blue: 0.99)
+    private let secondaryText = Color(red: 0.65, green: 0.65, blue: 0.70)
+
+    private var isStale: Bool {
+        now.timeIntervalSince(item.lastSyncedAt) > 15 * 60
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(item.provider.accentColor)
+                    .frame(width: 7, height: 7)
+                Text(item.provider.displayName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(primaryText)
+                Text(item.planName.uppercased())
+                    .font(.system(size: 9, weight: .bold, design: .monospaced))
+                    .foregroundStyle(item.provider.accentColor)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(item.provider.accentColor.opacity(0.16), in: Capsule())
+                Spacer()
+                if item.isEstimate {
+                    tag("EST.", color: secondaryText)
+                }
+                if isStale {
+                    tag(KarvFormatting.relativeSyncString(from: item.lastSyncedAt, now: now), color: QuotaStatus.elevated.tintColor)
+                }
+            }
+
+            HStack(alignment: .top, spacing: 8) {
+                MacWindowBlock(window: item.primaryWindow, isSecondary: false, accent: item.provider.accentColor, now: now)
+                if let weekly = item.secondaryWindow {
+                    MacWindowBlock(window: weekly, isSecondary: true, accent: item.provider.secondaryAccentColor, now: now)
+                }
+            }
+            .opacity(isStale ? 0.6 : 1)
+
+            if let note = item.statusNote {
+                Text(note)
+                    .font(.system(size: 10))
+                    .foregroundStyle(secondaryText.opacity(0.8))
+                    .lineLimit(2)
+            }
+        }
+        .padding(11)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
+        )
+    }
+
+    private func tag(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(color.opacity(0.5), lineWidth: 1))
+    }
+}
+
+struct MacWindowBlock: View {
+    let window: QuotaWindow
+    let isSecondary: Bool
+    let accent: Color
+    let now: Date
+
+    private let primaryText = Color(red: 0.98, green: 0.98, blue: 0.99)
+    private let secondaryText = Color(red: 0.65, green: 0.65, blue: 0.70)
+
+    private var label: String {
+        if isSecondary { return "WEEKLY" }
+        let title = window.title.lowercased()
+        if title.contains("5h") { return "5H SESSION" }
+        if title.contains("day") || title.contains("daily") { return "DAILY" }
+        return window.title.uppercased()
+    }
+
+    var body: some View {
+        let summary = window.reserveSummary(at: now, isSecondary: isSecondary)
+        let pace = window.pace(at: now, isSecondary: isSecondary)
+        let toneColor: Color = switch summary.tone {
+        case .good: QuotaStatus.nominal.tintColor
+        case .neutral: secondaryText
+        case .bad: QuotaStatus.critical.tintColor
+        }
+
+        VStack(alignment: .leading, spacing: 5) {
+            Text(label)
+                .font(.system(size: 9, weight: .semibold))
+                .tracking(0.8)
+                .foregroundStyle(secondaryText)
+
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(KarvFormatting.percentString(window.remainingPercent))
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(primaryText)
+                Text("left")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(secondaryText)
+            }
+
+            // Used share, with a tick where an even burn would be by now.
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.10))
+                    Capsule()
+                        .fill(accent)
+                        .frame(width: max(3, geo.size.width * window.usedPercent))
+                    if !window.isRolling {
+                        Rectangle()
+                            .fill(primaryText)
+                            .frame(width: 2, height: 9)
+                            .offset(x: max(0, geo.size.width * pace.elapsedFraction - 1))
+                    }
+                }
+            }
+            .frame(height: 6)
+
+            Text(summary.text)
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .foregroundStyle(toneColor)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            Text("\(window.resetVerb.capitalized) in \(KarvFormatting.countdownString(until: window.resetsAt, from: now))")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundStyle(secondaryText)
+                .lineLimit(1)
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }

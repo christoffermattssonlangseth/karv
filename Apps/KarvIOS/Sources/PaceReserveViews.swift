@@ -39,9 +39,7 @@ struct PaceReserveLine: View {
         HStack(spacing: 4) {
             Image(systemName: "arrow.triangle.2.circlepath")
                 .font(.system(size: 9, weight: .bold))
-            Text(window.usedPercent > 0 && window.resetsAt > now
-                 ? "Rolling · frees up in \(KarvFormatting.durationString(window.resetsAt.timeIntervalSince(now)))"
-                 : "Rolling · no recent use")
+            Text(window.reserveSummary(at: now, isSecondary: isSecondary).text)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -54,7 +52,7 @@ struct PaceReserveLine: View {
         return HStack(spacing: 4) {
             Image(systemName: pace.state.symbol)
                 .font(.system(size: 9, weight: .bold))
-            Text(text(for: pace))
+            Text(window.reserveSummary(at: now, isSecondary: isSecondary).text)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
@@ -62,21 +60,6 @@ struct PaceReserveLine: View {
         .foregroundStyle(pace.state.tint)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityText(for: pace))
-    }
-
-    private func text(for pace: QuotaPace) -> String {
-        let pct = KarvFormatting.percentString(abs(pace.reserve))
-        switch pace.state {
-        case .onPace:
-            return "On pace"
-        case .underPace:
-            return "\(pct) reserve · \(KarvFormatting.durationString(pace.reserveTime))"
-        case .overPace:
-            if let empty = pace.projectedExhaustion(now: now) {
-                return "\(pct) over · out in \(KarvFormatting.durationString(empty.timeIntervalSince(now)))"
-            }
-            return "\(pct) over pace"
-        }
     }
 
     private func accessibilityText(for pace: QuotaPace) -> String {
