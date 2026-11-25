@@ -203,12 +203,36 @@ final class MacSyncCoordinator {
         }
     }
     var pairingFeedback: String?
+    /// Keep the iPhone's Claude token current via iCloud Keychain (end-to-end encrypted,
+    /// only your own devices), so it never needs manual re-pairing.
+    var shareClaudeTokenWithIPhone: Bool {
+        didSet {
+            UserDefaults.standard.set(shareClaudeTokenWithIPhone, forKey: "karv.mac.shareClaudeToken")
+            if shareClaudeTokenWithIPhone {
+                shareClaudeTokenIfChanged()
+            } else {
+                // Only remove what the Mac put there; leave a manually paired token alone.
+                if KarvKeychain.loadSharedClaudeToken()?.source == .mac {
+                    KarvKeychain.clearSharedClaudeToken()
+                }
+                tokenShareStatus = "Not sharing Claude token"
+            }
+        }
+    }
+    var tokenShareStatus: String?
 
     private let store: KarvSyncStore
     private let collector = LocalUsageCollector()
     private let bonjourServer = LocalBonjourSyncServer()
     private var timerTask: Task<Void, Never>?
     private var wakeObserver: NSObjectProtocol?
+    private var lastLiveClaude: ProviderUsageSnapshot?
+    /// A windowless menu-bar app gets App Napped, which stretches the 1-minute
+    /// `Task.sleep` to many minutes. Holding this activity opts out (sleep is still allowed).
+    private let appNapActivity = ProcessInfo.processInfo.beginActivity(
+        options: [.userInitiatedAllowingIdleSystemSleep],
+        reason: "Karv periodic usage sync"
+    )
 
     init() {
         let syncStore = KarvSyncStore(enableCloudSync: true)
@@ -217,6 +241,7 @@ final class MacSyncCoordinator {
         let savedBudget = UserDefaults.standard.double(forKey: "karv.mac.geminiBudget")
         self.geminiSessionBudget = savedBudget >= 20 ? savedBudget : 100.0
         self.launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        self.shareClaudeTokenWithIPhone = UserDefaults.standard.object(forKey: "karv.mac.shareClaudeToken") as? Bool ?? true
 
         bonjourServer.start(initialSnapshot: syncStore.snapshot)
         Task {
@@ -238,13 +263,36 @@ final class MacSyncCoordinator {
         guard !isSyncing else { return }
         isSyncing = true
         let budget = geminiSessionBudget
+        let lastLive = lastLiveClaude
         Task {
-            let collected = await collector.collectSnapshot(geminiSessionBudget: budget)
+            let collected = await collector.collectSnapshot(geminiSessionBudget: budget, lastLiveClaude: lastLive)
+            if let claude = collected.snapshot(for: .claude), claude.primaryWindow.subtitle == LocalUsageCollector.liveClaudeSubtitle {
+                lastLiveClaude = claude
+            }
             store.publish(collected)
+            shareClaudeTokenIfChanged()
             bonjourServer.update(snapshot: collected)
             KarvNotificationScheduler.scheduleAlerts(for: collected, preferences: store.preferences)
             snapshot = collected
             isSyncing = false
+        }
+    }
+
+    /// Claude Code refreshes its access token every few hours; push each new one to the
+    /// shared iCloud Keychain item so the iPhone app and widgets pick it up automatically.
+    private func shareClaudeTokenIfChanged() {
+        guard shareClaudeTokenWithIPhone,
+              let info = collector.readClaudeCredential() else { return }
+        // Compare with what's actually stored (not a cached copy), so a token removed or
+        // replaced on another device is restored on the next sync.
+        if let existing = KarvKeychain.loadSharedClaudeToken(), existing.token == info.token {
+            tokenShareStatus = "Claude token shared with iPhone"
+            return
+        }
+        if KarvKeychain.saveSharedClaudeToken(info) {
+            tokenShareStatus = "Claude token shared with iPhone"
+        } else {
+            tokenShareStatus = "Couldn't write to iCloud Keychain — use QR pairing"
         }
     }
 
@@ -540,6 +588,23 @@ struct MenuBarPopoverView: View {
                     }
                     .toggleStyle(.switch)
                     .controlSize(.mini)
+                }
+
+                HStack {
+                    Toggle(isOn: $coordinator.shareClaudeTokenWithIPhone) {
+                        Text("Keep iPhone's Claude token in sync (iCloud Keychain)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(secondaryText)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    Spacer()
+                }
+                if let status = coordinator.tokenShareStatus {
+                    Text(status)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(secondaryText.opacity(0.65))
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
                 HStack {

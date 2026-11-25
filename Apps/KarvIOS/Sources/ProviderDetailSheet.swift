@@ -181,7 +181,7 @@ struct ProviderDetailSheet: View {
                 .tracking(1.1)
                 .foregroundStyle(KarvTheme.textTertiary)
 
-            ForEach(windows) { window in
+            ForEach(Array(windows.enumerated()), id: \.element.id) { index, window in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
@@ -210,6 +210,9 @@ struct ProviderDetailSheet: View {
                         warningThreshold: store.preferences.warningThreshold,
                         height: 6
                     )
+
+                    PaceReserveDetail(window: window, isSecondary: index > 0, now: now)
+                        .padding(.top, 4)
                 }
                 .padding(14)
                 .background(KarvTheme.surfaceElevated, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

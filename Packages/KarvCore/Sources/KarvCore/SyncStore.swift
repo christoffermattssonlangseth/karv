@@ -110,6 +110,32 @@ public final class KarvSyncStore {
         isSyncing = false
     }
 
+    /// Merges a snapshot received from a peer (Bonjour from KarvMac, iCloud) without
+    /// letting an older payload overwrite newer readings. Does not re-broadcast to iCloud,
+    /// since the sender already did, which also avoids Mac <-> iPhone ping-pong.
+    public func merge(_ incoming: KarvSnapshot) {
+        if incoming.isDemoData && !snapshot.isDemoData { return }
+        if !incoming.isDemoData && preferences.useDemoMode {
+            // Note: didSet reloads cached snapshots, so compute the merge afterwards.
+            preferences.useDemoMode = false
+        }
+        let combined = snapshot.merged(with: incoming)
+        guard combined != snapshot else { return }
+        snapshot = combined
+        persistToAppGroup(combined)
+    }
+
+    /// Updates a provider's status note without touching its reading or timestamp,
+    /// e.g. to explain why it has stopped updating.
+    public func annotateProvider(_ provider: AIProvider, note: String?) {
+        guard let index = snapshot.providers.firstIndex(where: { $0.provider == provider }),
+              snapshot.providers[index].statusNote != note else { return }
+        var updated = snapshot
+        updated.providers[index].statusNote = note
+        snapshot = updated
+        persistToAppGroup(updated)
+    }
+
     /// Called by KarvMac (or manual entry on iPhone) to publish a fresh snapshot to iCloud + local cache.
     public func publish(_ newSnapshot: KarvSnapshot) {
         snapshot = newSnapshot
@@ -227,43 +253,7 @@ public final class KarvSyncStore {
     }
 
     public func updateClaudeFromDirectOAuth(_ live: ClaudeOAuthUsageResult) {
-        var updated = snapshot
-        guard let index = updated.providers.firstIndex(where: { $0.provider == .claude }) else { return }
-        var item = updated.providers[index]
-        let now = Date()
-
-        item.isConnected = true
-        item.primaryWindow = QuotaWindow(
-            id: "claude-5h",
-            title: "5h Session",
-            subtitle: "Direct Claude OAuth",
-            usedPercent: live.fiveHourUsed,
-            resetsAt: live.fiveHourResetsAt,
-            detailText: "\(Int((live.fiveHourUsed * 100).rounded()))% of 5-hour window"
-        )
-        item.secondaryWindow = QuotaWindow(
-            id: "claude-weekly",
-            title: "Weekly Cap",
-            subtitle: "7-day all-models limit",
-            usedPercent: live.sevenDayUsed,
-            resetsAt: live.sevenDayResetsAt,
-            detailText: "\(Int((live.sevenDayUsed * 100).rounded()))% of weekly cap"
-        )
-        item.lastSyncedAt = now
-        item.source = .claudeCLI
-        item.statusNote = "Direct from Claude API"
-
-        if !item.history.isEmpty {
-            var hist = item.history
-            let last = hist.removeLast()
-            hist.append(UsageHistoryPoint(id: last.id, date: now, usedPercent: live.fiveHourUsed))
-            item.history = hist
-        }
-
-        updated.providers[index] = item
-        updated.updatedAt = now
-        updated.isDemoData = false
-
+        let updated = snapshot.applyingClaudeOAuth(live)
         if !preferences.isEnabled(.claude) {
             setProvider(.claude, enabled: true)
         }
@@ -298,6 +288,7 @@ public final class KarvSyncStore {
         guard let index = updated.providers.firstIndex(where: { $0.provider == provider }) else { return }
         updated.providers[index].isConnected = false
         updated.providers[index].statusNote = "Disconnected"
+        updated.providers[index].lastSyncedAt = Date()
         updated.updatedAt = Date()
         publish(updated)
     }
@@ -323,6 +314,34 @@ public final class KarvSyncStore {
         )
     }
 
+    /// Called from the widget extension's timeline provider. If the cached Claude reading
+    /// is getting old and a token is available (synced from KarvMac via iCloud Keychain),
+    /// fetches fresh usage directly so the widget stays current even when the app hasn't
+    /// run, then writes it back to the App Group for the app to pick up.
+    public nonisolated static func refreshForWidget(maxClaudeAge: TimeInterval = 4 * 60) async -> KarvSnapshot {
+        let appGroup = UserDefaults(suiteName: KarvIdentifiers.appGroupID)
+        let prefs = loadPreferences(from: appGroup ?? .standard)
+
+        if !prefs.useDemoMode,
+           prefs.isEnabled(.claude),
+           let raw = loadSavedSnapshot(cloudStore: nil, appGroup: appGroup, local: .standard),
+           !raw.isDemoData,
+           let token = KarvKeychain.loadClaudeToken() {
+            let claudeAge = raw.snapshot(for: .claude).map { Date().timeIntervalSince($0.lastSyncedAt) } ?? .infinity
+            if claudeAge > maxClaudeAge {
+                let outcome = await ClaudeOAuthUsageClient.fetch(token: token)
+                if let live = outcome.result {
+                    let updated = raw.applyingClaudeOAuth(live)
+                    writeSnapshotMerging(updated, to: appGroup, local: .standard)
+                    KarvSyncHealth.recordSuccess(.widget)
+                } else {
+                    KarvSyncHealth.recordFailure(.widget, message: outcome.failureNote)
+                }
+            }
+        }
+        return readLatestSnapshotForWidget()
+    }
+
     private func startObservingCloud() {
         cloudStore?.synchronize()
         cloudObserver = NotificationCenter.default.addObserver(
@@ -341,24 +360,36 @@ public final class KarvSyncStore {
               let decoded = try? JSONDecoder().decode(KarvSnapshot.self, from: cloudData) else {
             return
         }
-        if !preferences.useDemoMode || !decoded.isDemoData {
-            preferences.useDemoMode = false
-            snapshot = decoded
-            persistToAppGroup(decoded)
+        if !decoded.isDemoData {
+            KarvSyncHealth.recordSuccess(.iCloud, message: "From \(decoded.sourceDeviceName)")
         }
+        merge(decoded)
     }
 
     private func loadFromCloudOrLocal() {
         if let loaded = Self.loadSavedSnapshot(cloudStore: cloudStore, appGroup: appGroupDefaults, local: localDefaults) {
-            snapshot = loaded
-            persistToAppGroup(loaded)
+            merge(loaded)
         } else {
             lastSyncError = "Waiting for first sync from KarvMac on iCloud."
         }
     }
 
     private func persistToAppGroup(_ snap: KarvSnapshot) {
-        Self.writeSnapshot(snap, to: appGroupDefaults, local: localDefaults)
+        Self.writeSnapshotMerging(snap, to: appGroupDefaults, local: localDefaults)
+    }
+
+    /// Writes a snapshot, first merging with the copy already in the App Group so that a
+    /// newer reading written by another process (the widget) is never rolled back.
+    /// Demo snapshots are written as-is so toggling demo mode still works.
+    private nonisolated static func writeSnapshotMerging(_ snap: KarvSnapshot, to appGroup: UserDefaults?, local: UserDefaults) {
+        var toWrite = snap
+        if !snap.isDemoData,
+           let data = appGroup?.data(forKey: KarvIdentifiers.snapshotStorageKey),
+           let existing = try? JSONDecoder().decode(KarvSnapshot.self, from: data),
+           !existing.isDemoData {
+            toWrite = snap.merged(with: existing)
+        }
+        writeSnapshot(toWrite, to: appGroup, local: local)
     }
 
     private func savePreferences() {
@@ -375,7 +406,7 @@ public final class KarvSyncStore {
         return decoded
     }
 
-    private static func writeSnapshot(_ snap: KarvSnapshot, to appGroup: UserDefaults?, local: UserDefaults) {
+    private nonisolated static func writeSnapshot(_ snap: KarvSnapshot, to appGroup: UserDefaults?, local: UserDefaults) {
         guard let data = try? JSONEncoder().encode(snap) else { return }
         appGroup?.set(data, forKey: KarvIdentifiers.snapshotStorageKey)
         local.set(data, forKey: KarvIdentifiers.snapshotStorageKey)
@@ -391,11 +422,51 @@ public final class KarvSyncStore {
             appGroup?.data(forKey: KarvIdentifiers.snapshotStorageKey),
             local.data(forKey: KarvIdentifiers.snapshotStorageKey)
         ]
-        for data in sources {
-            if let data, let decoded = try? JSONDecoder().decode(KarvSnapshot.self, from: data) {
-                return decoded
-            }
+        // Merge every source instead of trusting the first one: the iCloud copy is often
+        // older than the local cache, because KVS delivers external changes lazily.
+        let decoded = sources.compactMap { data in
+            data.flatMap { try? JSONDecoder().decode(KarvSnapshot.self, from: $0) }
         }
-        return nil
+        guard var best = decoded.first else { return nil }
+        for next in decoded.dropFirst() {
+            best = best.merged(with: next)
+        }
+        return best
+    }
+}
+
+extension KarvSyncStore {
+    /// Direct Claude fetch (iPhone 5G path), routed through the shared throttle.
+    /// Skips the network when another source (e.g. KarvMac) delivered a Claude reading
+    /// very recently, and explains in the status note why data has gone stale.
+    @discardableResult
+    public func refreshClaudeDirect(token: String, force: Bool = false) async -> ClaudeOAuthFetchOutcome? {
+        let now = Date()
+        if force {
+            await ClaudeUsageGate.shared.reset()
+        } else if let claude = snapshot.snapshot(for: .claude),
+                  !snapshot.isDemoData,
+                  claude.isConnected,
+                  now.timeIntervalSince(claude.lastSyncedAt) < 90 {
+            return nil
+        }
+
+        let outcome = await ClaudeUsageGate.shared.fetch(token: token)
+        switch outcome {
+        case .success:
+            KarvSyncHealth.recordSuccess(.claudeAPI)
+        case .throttled:
+            break
+        default:
+            KarvSyncHealth.recordFailure(.claudeAPI, message: outcome.failureNote)
+        }
+        if let live = outcome.result {
+            updateClaudeFromDirectOAuth(live)
+        } else if let note = outcome.failureNote,
+                  let claude = snapshot.snapshot(for: .claude),
+                  Date().timeIntervalSince(claude.lastSyncedAt) > 10 * 60 {
+            annotateProvider(.claude, note: note)
+        }
+        return outcome
     }
 }

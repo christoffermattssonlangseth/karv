@@ -8,6 +8,7 @@ struct SettingsView: View {
     @State private var webAuthProvider: AIProvider?
     @State private var claudeTokenInput: String = ""
     @State private var hasSavedClaudeToken: Bool = KarvKeychain.loadClaudeToken() != nil
+    @State private var tokenIsFromMac: Bool = KarvKeychain.loadClaudeTokenInfo()?.source == .mac
     @State private var directClaudeStatus: String?
     @State private var isTestingClaudeToken: Bool = false
 
@@ -20,6 +21,7 @@ struct SettingsView: View {
                     VStack(spacing: 16) {
                         header
                         macSyncCard
+                        SyncHealthCard()
                         directClaudeCard
                         visiblePlatformsCard
                         connectAccountsCard
@@ -30,6 +32,7 @@ struct SettingsView: View {
                     .padding(.top, 10)
                     .padding(.bottom, 32)
                 }
+                .onAppear(perform: reloadTokenState)
             }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(item: $webAuthProvider) { provider in
@@ -55,7 +58,7 @@ struct SettingsView: View {
                 }
             }
 
-            Text("Save your Claude Code OAuth token in iOS Keychain to fetch live 5h & weekly Claude usage anywhere, even when your Mac is closed.")
+            Text("KarvMac keeps this token in sync automatically through iCloud Keychain, so live 5h & weekly Claude usage works anywhere, even on 5G with the Mac closed. You can also paste a token by hand.")
                 .font(.system(size: 12))
                 .foregroundStyle(KarvTheme.textSecondary)
 
@@ -103,12 +106,19 @@ struct SettingsView: View {
 
                     Spacer()
 
-                    Button("Remove Token", role: .destructive) {
-                        KarvKeychain.clearClaudeToken()
-                        hasSavedClaudeToken = false
-                        directClaudeStatus = "Token removed from Keychain."
+                    if tokenIsFromMac {
+                        // KarvMac would just re-share it; the switch lives on the Mac.
+                        Text("Synced from KarvMac")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(KarvTheme.textTertiary)
+                    } else {
+                        Button("Remove Token", role: .destructive) {
+                            KarvKeychain.clearClaudeToken()
+                            hasSavedClaudeToken = false
+                            directClaudeStatus = "Token removed from Keychain."
+                        }
+                        .font(.system(size: 12, weight: .medium))
                     }
-                    .font(.system(size: 12, weight: .medium))
                 }
             }
 
@@ -122,14 +132,20 @@ struct SettingsView: View {
         .karvCard(glow: AIProvider.claude.accentColor, cornerRadius: 22)
     }
 
+    /// The token can arrive from KarvMac via iCloud Keychain at any time.
+    private func reloadTokenState() {
+        let info = KarvKeychain.loadClaudeTokenInfo()
+        hasSavedClaudeToken = info != nil
+        tokenIsFromMac = info?.source == .mac
+    }
+
     private func testDirectClaude(token: String) async {
         isTestingClaudeToken = true
-        if let live = await ClaudeOAuthUsageClient.fetchUsage(token: token) {
-            store.updateClaudeFromDirectOAuth(live)
-            WidgetCenter.shared.reloadAllTimelines()
+        let outcome = await store.refreshClaudeDirect(token: token, force: true)
+        if let live = outcome?.result {
             directClaudeStatus = "Live Claude synced (\(Int((live.fiveHourUsed * 100).rounded()))% 5h · \(Int((live.sevenDayUsed * 100).rounded()))% weekly)"
         } else {
-            directClaudeStatus = "Could not fetch Claude usage — check token validity."
+            directClaudeStatus = outcome?.failureNote ?? "Could not fetch Claude usage — check token validity."
         }
         isTestingClaudeToken = false
     }

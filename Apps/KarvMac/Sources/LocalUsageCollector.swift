@@ -5,17 +5,23 @@ import KarvCore
 /// Scans local CLI directories (~/.claude, ~/.codex, ~/.gemini) and local Claude Code OAuth
 /// on macOS to build a KarvSnapshot suitable for syncing to iPhone via iCloud.
 struct LocalUsageCollector: Sendable {
+    /// Marks a Claude reading that came from the live API (vs. the local estimate).
+    static let liveClaudeSubtitle = "Live Claude subscription limit"
+
     private let homeDirectory: URL
 
     init(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.homeDirectory = homeDirectory
     }
 
-    func collectSnapshot(geminiSessionBudget: Double = 100.0) async -> KarvSnapshot {
+    /// - Parameter lastLiveClaude: the most recent reading that came from the Claude API.
+    ///   When the API call fails (429, expired token, offline) this is kept instead of
+    ///   replacing a real reading with the rough local estimate.
+    func collectSnapshot(geminiSessionBudget: Double = 100.0, lastLiveClaude: ProviderUsageSnapshot? = nil) async -> KarvSnapshot {
         let now = Date()
         let hostName = Host.current().localizedName ?? "Mac"
 
-        let claude = await collectClaude(now: now)
+        let claude = await collectClaude(now: now, lastLive: lastLiveClaude)
         let codex = collectCodex(now: now)
         let gemini = collectGemini(now: now, sessionBudget: geminiSessionBudget)
 
@@ -33,9 +39,19 @@ struct LocalUsageCollector: Sendable {
         readClaudeOAuthToken()
     }
 
+    /// Claude Code's current access token plus its expiry, for sharing with the iPhone.
+    func readClaudeCredential() -> ClaudeTokenInfo? {
+        guard let data = readClaudeCredentialData(),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let oauth = (json["claudeAiOauth"] as? [String: Any]) ?? json
+        guard let token = oauth["accessToken"] as? String, !token.isEmpty else { return nil }
+        let expiresAt = (oauth["expiresAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+        return ClaudeTokenInfo(token: token, expiresAt: expiresAt, source: .mac)
+    }
+
     // MARK: - Claude (~/.claude + Claude Code OAuth)
 
-    private func collectClaude(now: Date) async -> ProviderUsageSnapshot {
+    private func collectClaude(now: Date, lastLive: ProviderUsageSnapshot?) async -> ProviderUsageSnapshot {
         let claudeDir = homeDirectory.appendingPathComponent(".claude")
         let historyFile = claudeDir.appendingPathComponent("history.jsonl")
         let projectsDir = claudeDir.appendingPathComponent("projects")
@@ -48,8 +64,12 @@ struct LocalUsageCollector: Sendable {
             : dailyActivityHistory(in: projectsDir, now: now, dailyScale: 320.0, prefix: "claude")
 
         // 1. Try exact live usage from Anthropic's Claude Code OAuth usage endpoint
-        if let token = readClaudeOAuthToken(),
-           let live = await fetchClaudeOAuthUsage(token: token, now: now) {
+        let outcome: ClaudeOAuthFetchOutcome? = if let token = readClaudeOAuthToken() {
+            await ClaudeUsageGate.shared.fetch(token: token, now: now)
+        } else {
+            nil
+        }
+        if let live = outcome?.result {
             var updatedHistory = historyPoints
             if !updatedHistory.isEmpty {
                 let last = updatedHistory.removeLast()
@@ -58,12 +78,12 @@ struct LocalUsageCollector: Sendable {
 
             return ProviderUsageSnapshot(
                 provider: .claude,
-                planName: live.planName ?? AIProvider.claude.defaultPlanName,
+                planName: AIProvider.claude.defaultPlanName,
                 isConnected: true,
                 primaryWindow: QuotaWindow(
                     id: "claude-5h",
                     title: "5h Session",
-                    subtitle: "Live Claude subscription limit",
+                    subtitle: Self.liveClaudeSubtitle,
                     usedPercent: live.fiveHourUsed,
                     resetsAt: live.fiveHourResetsAt,
                     detailText: "\(Int((live.fiveHourUsed * 100).rounded()))% of 5-hour window"
@@ -83,7 +103,23 @@ struct LocalUsageCollector: Sendable {
             )
         }
 
-        // 2. Fallback to local ~/.claude/history.jsonl activity estimate
+        // 2. Keep the last real reading (with its original timestamp) while its 5h window
+        //    is still current, so a transient API failure doesn't publish wrong numbers.
+        if var kept = lastLive, kept.primaryWindow.resetsAt > now {
+            switch outcome {
+            case .throttled?, .success?:
+                break // normal cooldown between polls; nothing to report
+            case .unauthorized?:
+                kept.statusNote = "Claude token expired — open Claude Code on this Mac to refresh it"
+            case nil:
+                kept.statusNote = "Claude Code token not found on this Mac"
+            case let other?:
+                kept.statusNote = other.failureNote
+            }
+            return kept
+        }
+
+        // 3. Fallback to local ~/.claude/history.jsonl activity estimate
         guard exists else {
             return disconnectedSnapshot(provider: .claude, now: now, note: "~/.claude not found")
         }
@@ -136,15 +172,11 @@ struct LocalUsageCollector: Sendable {
         )
     }
 
-    private struct ClaudeLiveUsage {
-        let fiveHourUsed: Double
-        let fiveHourResetsAt: Date
-        let sevenDayUsed: Double
-        let sevenDayResetsAt: Date
-        let planName: String?
+    private func readClaudeOAuthToken() -> String? {
+        readClaudeCredentialData().flatMap(extractAccessToken(from:))
     }
 
-    private func readClaudeOAuthToken() -> String? {
+    private func readClaudeCredentialData() -> Data? {
         // 1. Check macOS Keychain ("Claude Code-credentials")
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
@@ -155,15 +187,15 @@ struct LocalUsageCollector: Sendable {
         var result: AnyObject?
         if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
            let data = result as? Data,
-           let token = extractAccessToken(from: data) {
-            return token
+           extractAccessToken(from: data) != nil {
+            return data
         }
 
         // 2. Fallback to ~/.claude/.credentials.json
         let credFile = homeDirectory.appendingPathComponent(".claude/.credentials.json")
         if let data = try? Data(contentsOf: credFile),
-           let token = extractAccessToken(from: data) {
-            return token
+           extractAccessToken(from: data) != nil {
+            return data
         }
         return nil
     }
@@ -178,50 +210,6 @@ struct LocalUsageCollector: Sendable {
             return access
         }
         return nil
-    }
-
-    private func fetchClaudeOAuthUsage(token: String, now: Date) async -> ClaudeLiveUsage? {
-        guard let url = URL(string: "https://api.anthropic.com/api/oauth/usage") else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.timeoutInterval = 10
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse,
-              (200..<300).contains(http.statusCode),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            return nil
-        }
-
-        let isoWithFrac = ISO8601DateFormatter()
-        isoWithFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let isoBasic = ISO8601DateFormatter()
-        isoBasic.formatOptions = [.withInternetDateTime]
-
-        func parseDate(_ str: String?) -> Date? {
-            guard let str else { return nil }
-            return isoWithFrac.date(from: str) ?? isoBasic.date(from: str)
-        }
-
-        let fiveHour = json["five_hour"] as? [String: Any]
-        let sevenDay = json["seven_day"] as? [String: Any]
-
-        guard let fiveUtil = fiveHour?["utilization"] as? Double else { return nil }
-        let sevenUtil = (sevenDay?["utilization"] as? Double) ?? 0
-
-        let fiveReset = parseDate(fiveHour?["resets_at"] as? String) ?? now.addingTimeInterval(5 * 3600)
-        let sevenReset = parseDate(sevenDay?["resets_at"] as? String) ?? now.addingTimeInterval(7 * 86400)
-
-        return ClaudeLiveUsage(
-            fiveHourUsed: min(max(fiveUtil / 100.0, 0), 1),
-            fiveHourResetsAt: fiveReset,
-            sevenDayUsed: min(max(sevenUtil / 100.0, 0), 1),
-            sevenDayResetsAt: sevenReset,
-            planName: nil
-        )
     }
 
     private func parseClaudeHistoryTimestamps(fileURL: URL) -> [Date] {

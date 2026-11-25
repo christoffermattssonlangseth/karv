@@ -19,8 +19,17 @@ struct KarvTimelineProvider: TimelineProvider {
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<KarvWidgetEntry>) -> Void) {
-        let now = Date()
-        let snap = KarvSyncStore.readLatestSnapshotForWidget()
+        // WidgetKit's completion isn't Sendable-annotated; it is safe to call from any thread.
+        nonisolated(unsafe) let completion = completion
+        Task {
+            // Fetches Claude directly when the cached reading is old, so the widget stays
+            // fresh even if the app hasn't been opened.
+            let snap = await KarvSyncStore.refreshForWidget()
+            completion(Self.makeTimeline(snapshot: snap, now: Date()))
+        }
+    }
+
+    private static func makeTimeline(snapshot snap: KarvSnapshot, now: Date) -> Timeline<KarvWidgetEntry> {
 
         // Generate 6 timeline entries spaced every 5 minutes so pacing needles
         // and reset countdowns stay accurate on the Home & Lock Screen.
@@ -30,7 +39,7 @@ struct KarvTimelineProvider: TimelineProvider {
             entries.append(KarvWidgetEntry(date: entryDate, snapshot: snap))
         }
         let nextRefresh = now.addingTimeInterval(300)
-        completion(Timeline(entries: entries, policy: .after(nextRefresh)))
+        return Timeline(entries: entries, policy: .after(nextRefresh))
     }
 }
 
@@ -102,18 +111,7 @@ private extension QuotaWindow {
     /// Estimates fraction of the current quota window that has elapsed (0...1)
     /// so the pacing needle sits at the right spot on the ring.
     func elapsedFraction(at now: Date, isSecondary: Bool) -> Double {
-        let totalDuration: TimeInterval
-        if isSecondary || title.localizedCaseInsensitiveContains("week") {
-            totalDuration = 7 * 86400
-        } else if title.localizedCaseInsensitiveContains("5h") {
-            totalDuration = 5 * 3600
-        } else {
-            totalDuration = 24 * 3600
-        }
-
-        let remaining = resetsAt.timeIntervalSince(now)
-        let elapsed = totalDuration - remaining
-        return min(max(elapsed / totalDuration, 0.04), 0.96)
+        min(max(pace(at: now, isSecondary: isSecondary).elapsedFraction, 0.04), 0.96)
     }
 }
 

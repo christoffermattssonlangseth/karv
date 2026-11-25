@@ -222,16 +222,11 @@ struct DashboardView: View {
         withAnimation(.easeInOut(duration: 0.55)) {
             isSpinning = true
         }
-        if macSync.isConnectedToMac {
-            macSync.pullNow()
-        } else {
-            store.refresh()
-        }
+        macSync.pullNow()
+        store.refresh()
         Task {
-            if let token = KarvKeychain.loadClaudeToken(),
-               let live = await ClaudeOAuthUsageClient.fetchUsage(token: token) {
-                store.updateClaudeFromDirectOAuth(live)
-                WidgetCenter.shared.reloadAllTimelines()
+            if let token = KarvKeychain.loadClaudeToken() {
+                await store.refreshClaudeDirect(token: token)
             }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.55) {
@@ -248,6 +243,12 @@ struct ProviderCardView: View {
 
     private var status: QuotaStatus {
         snapshot.primaryWindow.status(warningThreshold: warningThreshold)
+    }
+
+    /// Real data that hasn't been refreshed for a while is dimmed so it isn't mistaken
+    /// for current numbers.
+    private var isStale: Bool {
+        snapshot.source != .demo && snapshot.isStale(now: now)
     }
 
     var body: some View {
@@ -270,10 +271,16 @@ struct ProviderCardView: View {
                             .background(snapshot.provider.accentColor.opacity(0.14), in: Capsule())
                     }
 
-                    Text(snapshot.statusNote ?? snapshot.source.rawValue)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(KarvTheme.textTertiary)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        if isStale {
+                            Image(systemName: "clock.badge.exclamationmark")
+                                .font(.system(size: 10))
+                        }
+                        Text("\(snapshot.statusNote ?? snapshot.source.rawValue) · \(KarvFormatting.relativeSyncString(from: snapshot.lastSyncedAt, now: now))")
+                            .lineLimit(1)
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(isStale ? QuotaStatus.elevated.tintColor : KarvTheme.textTertiary)
                 }
 
                 Spacer()
@@ -295,6 +302,7 @@ struct ProviderCardView: View {
                 windowTile(
                     tag: "S",
                     window: snapshot.primaryWindow,
+                    isSecondary: false,
                     accent: snapshot.provider.accentColor,
                     secondaryAccent: snapshot.provider.secondaryAccentColor
                 )
@@ -303,11 +311,13 @@ struct ProviderCardView: View {
                     windowTile(
                         tag: "W",
                         window: weekly,
+                        isSecondary: true,
                         accent: snapshot.provider.secondaryAccentColor,
                         secondaryAccent: snapshot.provider.accentColor
                     )
                 }
             }
+            .opacity(isStale ? 0.55 : 1)
         }
         .padding(16)
         .karvCard(glow: snapshot.provider.accentColor, cornerRadius: 22)
@@ -316,6 +326,7 @@ struct ProviderCardView: View {
     private func windowTile(
         tag: String,
         window: QuotaWindow,
+        isSecondary: Bool,
         accent: Color,
         secondaryAccent: Color
     ) -> some View {
@@ -355,6 +366,8 @@ struct ProviderCardView: View {
                 warningThreshold: warningThreshold,
                 height: 6
             )
+
+            PaceReserveLine(window: window, isSecondary: isSecondary, now: now)
 
             HStack(spacing: 4) {
                 Image(systemName: "clock")

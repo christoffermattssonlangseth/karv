@@ -20,6 +20,7 @@
 		8B2A3054E05015E4B1F98F84 /* LocalUsageCollector.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0CF5E3C38D7FE4E33D09585 /* LocalUsageCollector.swift */; };
 		9392FF2972C2ED2917DB6A37 /* KarvWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = B6874189EB03554A2F613926 /* KarvWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		A8BC618DDA61F6C229128977 /* ProviderDetailSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */; };
+		B3A2CC09BFD1078EA430DAAA /* PaceReserveViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD30ABA574350E360AA075F3 /* PaceReserveViews.swift */; };
 		C18C0E9F71E67FA0CC496637 /* ProviderWebAuthSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71EC888C0C12181AADE53A7C /* ProviderWebAuthSheet.swift */; };
 		DDF306D38D2E45B362639AE6 /* LiveActivityManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E13553BEE559CFC9C268C228 /* LiveActivityManager.swift */; };
 		E089751689884F11E170A002 /* KarvApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38DC5039E76E8CE51380C80 /* KarvApp.swift */; };
@@ -70,6 +71,7 @@
 		CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		E13553BEE559CFC9C268C228 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveActivityManager.swift; sourceTree = "<group>"; };
 		E38DC5039E76E8CE51380C80 /* KarvApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KarvApp.swift; sourceTree = "<group>"; };
+		FD30ABA574350E360AA075F3 /* PaceReserveViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaceReserveViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -141,6 +143,7 @@
 				E38DC5039E76E8CE51380C80 /* KarvApp.swift */,
 				E13553BEE559CFC9C268C228 /* LiveActivityManager.swift */,
 				215E3E474109F5AF58339B95 /* MacBonjourSyncClient.swift */,
+				FD30ABA574350E360AA075F3 /* PaceReserveViews.swift */,
 				050C9B97F6D0100DF9C61706 /* ProviderDetailSheet.swift */,
 				71EC888C0C12181AADE53A7C /* ProviderWebAuthSheet.swift */,
 				CCAD5F397E07FBA2EDD6CCD3 /* SettingsView.swift */,
@@ -325,6 +328,7 @@
 				E089751689884F11E170A002 /* KarvApp.swift in Sources */,
 				DDF306D38D2E45B362639AE6 /* LiveActivityManager.swift in Sources */,
 				77DE89E84B28C22A4545F041 /* MacBonjourSyncClient.swift in Sources */,
+				B3A2CC09BFD1078EA430DAAA /* PaceReserveViews.swift in Sources */,
 				A8BC618DDA61F6C229128977 /* ProviderDetailSheet.swift in Sources */,
 				C18C0E9F71E67FA0CC496637 /* ProviderWebAuthSheet.swift in Sources */,
 				75962DF81AF29AD5F008ABBA /* SettingsView.swift in Sources */,

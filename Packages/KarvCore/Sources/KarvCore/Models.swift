@@ -214,6 +214,81 @@ public struct KarvSnapshot: Codable, Hashable, Sendable {
         providers.first(where: { $0.provider == provider })
     }
 
+    /// Returns a copy with Claude's windows replaced by a live OAuth reading.
+    public func applyingClaudeOAuth(_ live: ClaudeOAuthUsageResult, now: Date = Date()) -> KarvSnapshot {
+        var updated = self
+        guard let index = updated.providers.firstIndex(where: { $0.provider == .claude }) else { return self }
+        var item = updated.providers[index]
+
+        item.isConnected = true
+        item.primaryWindow = QuotaWindow(
+            id: "claude-5h",
+            title: "5h Session",
+            subtitle: "Direct Claude OAuth",
+            usedPercent: live.fiveHourUsed,
+            resetsAt: live.fiveHourResetsAt,
+            detailText: "\(Int((live.fiveHourUsed * 100).rounded()))% of 5-hour window"
+        )
+        item.secondaryWindow = QuotaWindow(
+            id: "claude-weekly",
+            title: "Weekly Cap",
+            subtitle: "7-day all-models limit",
+            usedPercent: live.sevenDayUsed,
+            resetsAt: live.sevenDayResetsAt,
+            detailText: "\(Int((live.sevenDayUsed * 100).rounded()))% of weekly cap"
+        )
+        item.lastSyncedAt = now
+        item.source = .claudeCLI
+        item.statusNote = "Direct from Claude API"
+
+        if !item.history.isEmpty {
+            var hist = item.history
+            let last = hist.removeLast()
+            hist.append(UsageHistoryPoint(id: last.id, date: now, usedPercent: live.fiveHourUsed))
+            item.history = hist
+        }
+
+        updated.providers[index] = item
+        updated.updatedAt = now
+        updated.isDemoData = false
+        return updated
+    }
+
+    /// Combines two snapshots that may come from different devices/transports
+    /// (Bonjour, iCloud KVS, direct OAuth). Per provider, the reading with the newer
+    /// `lastSyncedAt` wins, so a late-arriving older payload can never roll data back.
+    /// Real data always beats demo data.
+    public func merged(with incoming: KarvSnapshot) -> KarvSnapshot {
+        if isDemoData != incoming.isDemoData {
+            return isDemoData ? incoming : self
+        }
+
+        var result: [ProviderUsageSnapshot] = []
+        var seen = Set<AIProvider>()
+        for mine in providers {
+            seen.insert(mine.provider)
+            if let theirs = incoming.snapshot(for: mine.provider), theirs.lastSyncedAt > mine.lastSyncedAt {
+                result.append(theirs)
+            } else {
+                result.append(mine)
+            }
+        }
+        for theirs in incoming.providers where !seen.contains(theirs.provider) {
+            result.append(theirs)
+        }
+        result.sort { lhs, rhs in
+            (AIProvider.allCases.firstIndex(of: lhs.provider) ?? 0) < (AIProvider.allCases.firstIndex(of: rhs.provider) ?? 0)
+        }
+
+        let incomingIsNewer = incoming.updatedAt > updatedAt
+        return KarvSnapshot(
+            providers: result,
+            sourceDeviceName: incomingIsNewer ? incoming.sourceDeviceName : sourceDeviceName,
+            updatedAt: max(updatedAt, incoming.updatedAt),
+            isDemoData: isDemoData
+        )
+    }
+
     public var averageRemainingPercent: Double {
         guard !providers.isEmpty else { return 0 }
         let total = providers.reduce(0.0) { $0 + $1.primaryWindow.remainingPercent }

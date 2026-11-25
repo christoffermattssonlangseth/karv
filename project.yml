@@ -58,6 +58,8 @@ targets:
         com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)com.cml.karv.shared
         com.apple.security.application-groups:
           - group.com.cml.karv.shared
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.cml.karv.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cml.karv.ios
@@ -84,6 +86,8 @@ targets:
       properties:
         com.apple.security.application-groups:
           - group.com.cml.karv.shared
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)com.cml.karv.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cml.karv.ios.widget
@@ -102,6 +106,8 @@ targets:
       properties:
         com.apple.security.app-sandbox: false
         com.apple.developer.ubiquity-kvstore-identifier: $(TeamIdentifierPrefix)com.cml.karv.shared
+        keychain-access-groups:
+          - $(TeamIdentifierPrefix)com.cml.karv.shared
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.cml.karv.mac

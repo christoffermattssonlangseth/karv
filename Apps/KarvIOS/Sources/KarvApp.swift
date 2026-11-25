@@ -59,6 +59,7 @@ struct KarvApp: App {
     }
 
     private func refreshAllSources() async {
+        macSync.restartIfNeeded()
         macSync.pullNow()
         if !store.preferences.useDemoMode {
             store.refresh()
@@ -77,16 +78,13 @@ struct KarvApp: App {
         }
         KarvKeychain.saveClaudeToken(token)
         Task {
-            await refreshDirectClaudeIfConfigured()
+            await store.refreshClaudeDirect(token: token, force: true)
         }
     }
 
     private func refreshDirectClaudeIfConfigured() async {
         guard let token = KarvKeychain.loadClaudeToken() else { return }
-        if let live = await ClaudeOAuthUsageClient.fetchUsage(token: token) {
-            store.updateClaudeFromDirectOAuth(live)
-            WidgetCenter.shared.reloadAllTimelines()
-        }
+        await store.refreshClaudeDirect(token: token)
     }
 
     private static func registerBackgroundRefresh() {
@@ -103,11 +101,8 @@ struct KarvApp: App {
                         store.refresh()
                     }
                 }
-                if let token = KarvKeychain.loadClaudeToken(),
-                   let live = await ClaudeOAuthUsageClient.fetchUsage(token: token) {
-                    await MainActor.run {
-                        store.updateClaudeFromDirectOAuth(live)
-                    }
+                if let token = KarvKeychain.loadClaudeToken() {
+                    _ = await store.refreshClaudeDirect(token: token)
                 }
                 let latest = await MainActor.run { store.snapshot }
                 WidgetCenter.shared.reloadAllTimelines()
