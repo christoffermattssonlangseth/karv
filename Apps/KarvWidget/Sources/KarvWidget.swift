@@ -151,6 +151,12 @@ struct PacingRingGauge: View {
 }
 
 private extension QuotaWindow {
+    /// What's used now: a fixed window whose reset time has passed has started over,
+    /// even if no newer reading has arrived yet.
+    func displayedUsed(at now: Date) -> Double {
+        !isRolling && resetsAt <= now ? 0 : usedPercent
+    }
+
     /// Estimates fraction of the current quota window that has elapsed (0...1)
     /// so the pacing needle sits at the right spot on the ring.
     func elapsedFraction(at now: Date, isSecondary: Bool) -> Double {
@@ -183,6 +189,23 @@ struct KarvWidgetEntryView: View {
 
     private var widgetBackground: Color {
         entry.background.color
+    }
+
+    /// "↻ 39m" until a fixed reset, "frees 39m" for rolling windows. Once the reset time
+    /// has passed the cached reading is outdated, so show how old it is instead of
+    /// "Resetting".
+    private func resetLabel(for item: ProviderUsageSnapshot) -> String {
+        let window = item.primaryWindow
+        if window.resetsAt > entry.date {
+            return resetLabel(for: window)
+        }
+        return KarvFormatting.relativeSyncString(from: item.lastSyncedAt, now: entry.date)
+    }
+
+    private func resetLabel(for window: QuotaWindow) -> String {
+        guard window.resetsAt > entry.date else { return window.isRolling ? "idle" : "reset" }
+        let countdown = KarvFormatting.countdownString(until: window.resetsAt, from: entry.date)
+        return window.isRolling ? "frees \(countdown)" : "↻ \(countdown)"
     }
 
     /// Used share as a bare number for inside a ring ("62"), matching the white arc.
@@ -222,7 +245,7 @@ struct KarvWidgetEntryView: View {
                                         .lineLimit(1)
                                         .minimumScaleFactor(0.8)
                                 }
-                                Text("↻ \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
+                                Text(resetLabel(for: item))
                                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.45))
                                     .lineLimit(1)
@@ -234,20 +257,20 @@ struct KarvWidgetEntryView: View {
                             HStack(spacing: 4) {
                                 PacingRingGauge(
                                     letter: "S",
-                                    usedPercent: item.primaryWindow.usedPercent,
+                                    usedPercent: item.primaryWindow.displayedUsed(at: entry.date),
                                     elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                                     size: 38,
                                     lineWidth: 4.2,
-                                    value: ringValue(item.primaryWindow.usedPercent)
+                                    value: ringValue(item.primaryWindow.displayedUsed(at: entry.date))
                                 )
                                 if let secondary = item.secondaryWindow {
                                     PacingRingGauge(
                                         letter: "W",
-                                        usedPercent: secondary.usedPercent,
+                                        usedPercent: secondary.displayedUsed(at: entry.date),
                                         elapsedPercent: secondary.elapsedFraction(at: entry.date, isSecondary: true),
                                         size: 38,
                                         lineWidth: 4.2,
-                                        value: ringValue(secondary.usedPercent)
+                                        value: ringValue(secondary.displayedUsed(at: entry.date))
                                     )
                                 }
                             }
@@ -266,7 +289,7 @@ struct KarvWidgetEntryView: View {
                                         .lineLimit(1)
                                 }
                                 Spacer()
-                                Text(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))
+                                Text(resetLabel(for: item))
                                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.45))
                             }
@@ -275,12 +298,12 @@ struct KarvWidgetEntryView: View {
                                 HStack(spacing: 5) {
                                     PacingRingGauge(
                                         letter: "S",
-                                        usedPercent: item.primaryWindow.usedPercent,
+                                        usedPercent: item.primaryWindow.displayedUsed(at: entry.date),
                                         elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                                         size: 36,
                                         lineWidth: 4.5
                                     )
-                                    Text(KarvFormatting.percentString(item.primaryWindow.usedPercent))
+                                    Text(KarvFormatting.percentString(item.primaryWindow.displayedUsed(at: entry.date)))
                                         .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(.white.opacity(0.85))
                                         .minimumScaleFactor(0.8)
@@ -292,12 +315,12 @@ struct KarvWidgetEntryView: View {
                                     HStack(spacing: 5) {
                                         PacingRingGauge(
                                             letter: "W",
-                                            usedPercent: secondary.usedPercent,
+                                            usedPercent: secondary.displayedUsed(at: entry.date),
                                             elapsedPercent: secondary.elapsedFraction(at: entry.date, isSecondary: true),
                                             size: 36,
                                             lineWidth: 4.5
                                         )
-                                        Text(KarvFormatting.percentString(secondary.usedPercent))
+                                        Text(KarvFormatting.percentString(secondary.displayedUsed(at: entry.date)))
                                             .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(.white.opacity(0.85))
                                             .minimumScaleFactor(0.8)
@@ -358,12 +381,12 @@ struct KarvWidgetEntryView: View {
                                     VStack(spacing: 3) {
                                         PacingRingGauge(
                                             letter: "W",
-                                            usedPercent: secondary.usedPercent,
+                                            usedPercent: secondary.displayedUsed(at: entry.date),
                                             elapsedPercent: secondary.elapsedFraction(at: entry.date, isSecondary: true),
                                             size: ringSize,
                                             lineWidth: strokeWidth
                                         )
-                                        Text(KarvFormatting.percentString(secondary.usedPercent))
+                                        Text(KarvFormatting.percentString(secondary.displayedUsed(at: entry.date)))
                                             .font(.system(size: 9, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(.white.opacity(0.65))
                                     }
@@ -372,18 +395,18 @@ struct KarvWidgetEntryView: View {
                                 VStack(spacing: 3) {
                                     PacingRingGauge(
                                         letter: "S",
-                                        usedPercent: item.primaryWindow.usedPercent,
+                                        usedPercent: item.primaryWindow.displayedUsed(at: entry.date),
                                         elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                                         size: ringSize,
                                         lineWidth: strokeWidth
                                     )
-                                    Text(KarvFormatting.percentString(item.primaryWindow.usedPercent))
+                                    Text(KarvFormatting.percentString(item.primaryWindow.displayedUsed(at: entry.date)))
                                         .font(.system(size: 9, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(.white.opacity(0.65))
                                 }
                             }
 
-                            Text("↻ \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
+                            Text(resetLabel(for: item))
                                 .font(.system(size: 9, design: .monospaced))
                                 .foregroundStyle(.white.opacity(0.45))
                         }
@@ -441,12 +464,12 @@ struct KarvWidgetEntryView: View {
                                         .background(item.provider.accentColor.opacity(0.14), in: Capsule())
                                 }
 
-                                Text("S \(item.primaryWindow.resetVerb) \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
+                                Text("S \(resetLabel(for: item))")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.55))
 
                                 if let secondary = item.secondaryWindow {
-                                    Text("W \(secondary.resetVerb) \(KarvFormatting.countdownString(until: secondary.resetsAt, from: entry.date))")
+                                    Text("W \(resetLabel(for: secondary))")
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(.white.opacity(0.42))
                                 }
@@ -459,12 +482,12 @@ struct KarvWidgetEntryView: View {
                                     VStack(spacing: 4) {
                                         PacingRingGauge(
                                             letter: "W",
-                                            usedPercent: secondary.usedPercent,
+                                            usedPercent: secondary.displayedUsed(at: entry.date),
                                             elapsedPercent: secondary.elapsedFraction(at: entry.date, isSecondary: true),
                                             size: 52,
                                             lineWidth: 6.2
                                         )
-                                        Text(KarvFormatting.percentString(secondary.usedPercent))
+                                        Text(KarvFormatting.percentString(secondary.displayedUsed(at: entry.date)))
                                             .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                             .foregroundStyle(.white.opacity(0.7))
                                     }
@@ -473,12 +496,12 @@ struct KarvWidgetEntryView: View {
                                 VStack(spacing: 4) {
                                     PacingRingGauge(
                                         letter: "S",
-                                        usedPercent: item.primaryWindow.usedPercent,
+                                        usedPercent: item.primaryWindow.displayedUsed(at: entry.date),
                                         elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                                         size: 52,
                                         lineWidth: 6.2
                                     )
-                                    Text(KarvFormatting.percentString(item.primaryWindow.usedPercent))
+                                    Text(KarvFormatting.percentString(item.primaryWindow.displayedUsed(at: entry.date)))
                                         .font(.system(size: 10, weight: .semibold, design: .monospaced))
                                         .foregroundStyle(.white.opacity(0.7))
                                 }
@@ -521,7 +544,7 @@ struct KarvWidgetEntryView: View {
                     HStack(spacing: 5) {
                         PacingRingGauge(
                             letter: "S",
-                            usedPercent: item.primaryWindow.usedPercent,
+                            usedPercent: item.primaryWindow.displayedUsed(at: entry.date),
                             elapsedPercent: item.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                             size: 32,
                             lineWidth: 3.8
@@ -530,7 +553,7 @@ struct KarvWidgetEntryView: View {
                         if let weekly = item.secondaryWindow {
                             PacingRingGauge(
                                 letter: "W",
-                                usedPercent: weekly.usedPercent,
+                                usedPercent: weekly.displayedUsed(at: entry.date),
                                 elapsedPercent: weekly.elapsedFraction(at: entry.date, isSecondary: true),
                                 size: 32,
                                 lineWidth: 3.8
@@ -549,7 +572,7 @@ struct KarvWidgetEntryView: View {
             if let first = entry.snapshot.providers.first {
                 PacingRingGauge(
                     letter: first.provider.monogram,
-                    usedPercent: first.primaryWindow.usedPercent,
+                    usedPercent: first.primaryWindow.displayedUsed(at: entry.date),
                     elapsedPercent: first.primaryWindow.elapsedFraction(at: entry.date, isSecondary: false),
                     size: 48,
                     lineWidth: 5.5

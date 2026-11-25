@@ -334,6 +334,18 @@ public final class KarvSyncStore {
         let appGroup = UserDefaults(suiteName: KarvIdentifiers.appGroupID)
         let prefs = loadPreferences(from: appGroup ?? .standard)
 
+        // Pull what KarvMac last published to iCloud, so Codex/Gemini (and Claude) stay
+        // current even when the app hasn't run to fold it into the App Group.
+        if !prefs.useDemoMode {
+            let cloud = NSUbiquitousKeyValueStore.default
+            cloud.synchronize()
+            if let data = cloud.data(forKey: KarvIdentifiers.snapshotStorageKey),
+               let fromCloud = try? JSONDecoder().decode(KarvSnapshot.self, from: data),
+               !fromCloud.isDemoData {
+                writeSnapshotMerging(fromCloud, to: appGroup, local: .standard)
+            }
+        }
+
         if !prefs.useDemoMode,
            prefs.isEnabled(.claude),
            let raw = loadSavedSnapshot(cloudStore: nil, appGroup: appGroup, local: .standard),
