@@ -103,8 +103,13 @@ public struct QuotaWindow: Identifiable, Codable, Hashable, Sendable {
     public let subtitle: String
     /// Normalized 0.0 ... 1.0 representing used portion of the quota.
     public let usedPercent: Double
+    /// For fixed windows: when the quota resets. For rolling windows: when the oldest
+    /// counted activity drops out (the next moment usage goes down).
     public let resetsAt: Date
     public let detailText: String?
+    /// A rolling window has no fixed reset; usage just ages out. Pacing against a reset
+    /// time is meaningless for these, so the UI shows headroom instead.
+    public let isRolling: Bool
 
     public init(
         id: String,
@@ -112,7 +117,8 @@ public struct QuotaWindow: Identifiable, Codable, Hashable, Sendable {
         subtitle: String,
         usedPercent: Double,
         resetsAt: Date,
-        detailText: String? = nil
+        detailText: String? = nil,
+        isRolling: Bool = false
     ) {
         self.id = id
         self.title = title
@@ -120,6 +126,20 @@ public struct QuotaWindow: Identifiable, Codable, Hashable, Sendable {
         self.usedPercent = min(max(usedPercent, 0), 1)
         self.resetsAt = resetsAt
         self.detailText = detailText
+        self.isRolling = isRolling
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            id: try c.decode(String.self, forKey: .id),
+            title: try c.decode(String.self, forKey: .title),
+            subtitle: try c.decode(String.self, forKey: .subtitle),
+            usedPercent: try c.decode(Double.self, forKey: .usedPercent),
+            resetsAt: try c.decode(Date.self, forKey: .resetsAt),
+            detailText: try c.decodeIfPresent(String.self, forKey: .detailText),
+            isRolling: try c.decodeIfPresent(Bool.self, forKey: .isRolling) ?? false
+        )
     }
 
     public var remainingPercent: Double {
@@ -164,6 +184,9 @@ public struct ProviderUsageSnapshot: Identifiable, Codable, Hashable, Sendable {
     public var lastSyncedAt: Date
     public var source: SyncSource
     public var statusNote: String?
+    /// True when the numbers are inferred from local activity (prompt counts against a
+    /// budget) rather than read from the provider's real quota.
+    public var isEstimate: Bool
 
     public init(
         provider: AIProvider,
@@ -174,7 +197,8 @@ public struct ProviderUsageSnapshot: Identifiable, Codable, Hashable, Sendable {
         history: [UsageHistoryPoint] = [],
         lastSyncedAt: Date = Date(),
         source: SyncSource = .demo,
-        statusNote: String? = nil
+        statusNote: String? = nil,
+        isEstimate: Bool = false
     ) {
         self.provider = provider
         self.planName = planName
@@ -185,6 +209,42 @@ public struct ProviderUsageSnapshot: Identifiable, Codable, Hashable, Sendable {
         self.lastSyncedAt = lastSyncedAt
         self.source = source
         self.statusNote = statusNote
+        self.isEstimate = isEstimate
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            provider: try c.decode(AIProvider.self, forKey: .provider),
+            planName: try c.decode(String.self, forKey: .planName),
+            isConnected: try c.decode(Bool.self, forKey: .isConnected),
+            primaryWindow: try c.decode(QuotaWindow.self, forKey: .primaryWindow),
+            secondaryWindow: try c.decodeIfPresent(QuotaWindow.self, forKey: .secondaryWindow),
+            history: try c.decodeIfPresent([UsageHistoryPoint].self, forKey: .history) ?? [],
+            lastSyncedAt: try c.decode(Date.self, forKey: .lastSyncedAt),
+            source: try c.decode(SyncSource.self, forKey: .source),
+            statusNote: try c.decodeIfPresent(String.self, forKey: .statusNote),
+            isEstimate: try c.decodeIfPresent(Bool.self, forKey: .isEstimate) ?? false
+        )
+    }
+
+    /// How long a real reading keeps priority over a newer estimate.
+    public static let realReadingPriority: TimeInterval = 60 * 60
+
+    /// Picks between two readings of the same provider: real data beats an estimate while
+    /// it's reasonably recent and its window hasn't reset; otherwise the newer one wins.
+    public static func preferred(_ a: ProviderUsageSnapshot, _ b: ProviderUsageSnapshot, now: Date = Date()) -> ProviderUsageSnapshot {
+        func stillTrustworthy(_ real: ProviderUsageSnapshot) -> Bool {
+            !real.isEstimate
+                && real.isConnected
+                && now.timeIntervalSince(real.lastSyncedAt) < realReadingPriority
+                && real.primaryWindow.resetsAt > now
+        }
+        if a.isEstimate != b.isEstimate {
+            let real = a.isEstimate ? b : a
+            if stillTrustworthy(real) { return real }
+        }
+        return b.lastSyncedAt > a.lastSyncedAt ? b : a
     }
 
     public var highestUsedPercent: Double {
@@ -240,6 +300,7 @@ public struct KarvSnapshot: Codable, Hashable, Sendable {
         item.lastSyncedAt = now
         item.source = .claudeCLI
         item.statusNote = "Direct from Claude API"
+        item.isEstimate = false
 
         if !item.history.isEmpty {
             var hist = item.history
@@ -267,8 +328,8 @@ public struct KarvSnapshot: Codable, Hashable, Sendable {
         var seen = Set<AIProvider>()
         for mine in providers {
             seen.insert(mine.provider)
-            if let theirs = incoming.snapshot(for: mine.provider), theirs.lastSyncedAt > mine.lastSyncedAt {
-                result.append(theirs)
+            if let theirs = incoming.snapshot(for: mine.provider) {
+                result.append(ProviderUsageSnapshot.preferred(mine, theirs))
             } else {
                 result.append(mine)
             }

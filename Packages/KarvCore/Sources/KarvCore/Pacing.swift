@@ -63,8 +63,15 @@ extension QuotaWindow {
 
     public func pace(at now: Date = Date(), isSecondary: Bool) -> QuotaPace {
         let duration = windowDuration(isSecondary: isSecondary)
-        let remaining = resetsAt.timeIntervalSince(now)
-        let elapsed = min(max((duration - remaining) / duration, 0), 1)
+        // A rolling window never "resets", so there is no elapsed share to pace against.
+        // Treat it as on pace; callers show headroom for these instead.
+        let elapsed: Double
+        if isRolling {
+            elapsed = usedPercent
+        } else {
+            let remaining = resetsAt.timeIntervalSince(now)
+            elapsed = min(max((duration - remaining) / duration, 0), 1)
+        }
         return QuotaPace(
             elapsedFraction: elapsed,
             usedFraction: usedPercent,
@@ -72,6 +79,11 @@ extension QuotaWindow {
             resetsAt: resetsAt
         )
     }
+}
+
+extension QuotaWindow {
+    /// "resets" for fixed windows, "frees up" for rolling ones (usage ages out).
+    public var resetVerb: String { isRolling ? "frees up" : "resets" }
 }
 
 extension KarvFormatting {

@@ -110,7 +110,11 @@ struct DashboardView: View {
             ? 0
             : active.reduce(0.0) { $0 + $1.primaryWindow.remainingPercent } / Double(active.count)
         let averageValue = store.preferences.showRemainingPercentage ? avgRemaining : (1.0 - avgRemaining)
-        let soonest = active.map { ($0.provider, $0.primaryWindow.resetsAt) }.min(by: { $0.1 < $1.1 })
+        // Rolling windows never truly reset, so they don't count as "next reset".
+        let soonest = active
+            .filter { !$0.primaryWindow.isRolling }
+            .map { ($0.provider, $0.primaryWindow.resetsAt) }
+            .min(by: { $0.1 < $1.1 })
 
         return VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top) {
@@ -357,6 +361,16 @@ struct ProviderCardView: View {
                 Text(showRemaining ? "left" : "used")
                     .font(.system(size: 10, weight: .medium))
                     .foregroundStyle(KarvTheme.textTertiary)
+
+                if snapshot.isEstimate {
+                    Text("EST.")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundStyle(KarvTheme.textTertiary)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .overlay(Capsule().strokeBorder(KarvTheme.hairlineStrong, lineWidth: 1))
+                        .accessibilityLabel("Estimate")
+                }
             }
 
             PrecisionMeterBar(
@@ -373,7 +387,9 @@ struct ProviderCardView: View {
                 Image(systemName: "clock")
                     .font(.system(size: 9))
                     .foregroundStyle(KarvTheme.textTertiary)
-                Text("Resets \(KarvFormatting.countdownString(until: window.resetsAt, from: now))")
+                Text(window.isRolling && window.detailText != nil
+                     ? window.detailText!
+                     : "Resets \(KarvFormatting.countdownString(until: window.resetsAt, from: now))")
                     .font(.system(size: 10, weight: .medium, design: .monospaced))
                     .foregroundStyle(KarvTheme.textSecondary)
                     .lineLimit(1)

@@ -116,3 +116,46 @@ private func provider(_ p: AIProvider, used: Double, at date: Date) -> ProviderU
     #expect(KarvSyncHealthEntry(lastSuccess: now.addingTimeInterval(-3600)).status(now: now) == .stale)
     #expect(KarvSyncHealthEntry(lastSuccess: now.addingTimeInterval(-120), lastFailure: now.addingTimeInterval(-60)).status(now: now) == .failing)
 }
+
+@Test func realReadingBeatsNewerEstimate() {
+    let now = Date()
+    var real = provider(.gemini, used: 0.6, at: now.addingTimeInterval(-600))
+    real.source = .webSession
+    var estimate = provider(.gemini, used: 0.1, at: now)
+    estimate.isEstimate = true
+
+    let phone = KarvSnapshot(providers: [real], sourceDeviceName: "iPhone", updatedAt: real.lastSyncedAt)
+    let mac = KarvSnapshot(providers: [estimate], sourceDeviceName: "Mac", updatedAt: now)
+    #expect(phone.merged(with: mac).snapshot(for: .gemini)?.primaryWindow.usedPercent == 0.6)
+    #expect(mac.merged(with: phone).snapshot(for: .gemini)?.primaryWindow.usedPercent == 0.6)
+
+    // After the priority period, the newer estimate takes over again.
+    var oldReal = real
+    oldReal.lastSyncedAt = now.addingTimeInterval(-2 * 3600)
+    let stalePhone = KarvSnapshot(providers: [oldReal], sourceDeviceName: "iPhone", updatedAt: oldReal.lastSyncedAt)
+    #expect(stalePhone.merged(with: mac).snapshot(for: .gemini)?.primaryWindow.usedPercent == 0.1)
+}
+
+@Test func rollingWindowIsNeverOverPace() {
+    let now = Date()
+    let w = QuotaWindow(id: "g", title: "5h Session", subtitle: "", usedPercent: 0.7, resetsAt: now.addingTimeInterval(4 * 3600), isRolling: true)
+    #expect(w.pace(at: now, isSecondary: false).state == .onPace)
+    #expect(w.resetVerb == "frees up")
+}
+
+@Test func oldSnapshotsWithoutNewFieldsStillDecode() throws {
+    // Payload as written by the previous app version (no isRolling / isEstimate keys).
+    var snap = KarvDemoData.makeSnapshot()
+    snap.isDemoData = false
+    var json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(snap)) as! [String: Any]
+    var providers = json["providers"] as! [[String: Any]]
+    for i in providers.indices {
+        providers[i].removeValue(forKey: "isEstimate")
+        var pw = providers[i]["primaryWindow"] as! [String: Any]
+        pw.removeValue(forKey: "isRolling")
+        providers[i]["primaryWindow"] = pw
+    }
+    json["providers"] = providers
+    let decoded = try JSONDecoder().decode(KarvSnapshot.self, from: JSONSerialization.data(withJSONObject: json))
+    #expect(decoded.providers.allSatisfy { !$0.isEstimate && !$0.primaryWindow.isRolling })
+}

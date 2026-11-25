@@ -74,21 +74,11 @@ enum MenuBarRingRenderer {
                 cursorX += dotSize + dotToRingGap
 
                 let weeklyUsed = item.secondaryWindow?.usedPercent ?? 0
-                let weeklyElapsed = elapsedFraction(
-                    resetsAt: item.secondaryWindow?.resetsAt ?? now.addingTimeInterval(7 * 86400),
-                    duration: 7 * 86400,
-                    now: now
-                )
-
-                let sessionDuration: TimeInterval = item.primaryWindow.title.localizedCaseInsensitiveContains("5h")
-                    ? 5 * 3600
-                    : 24 * 3600
+                // Shared pacing logic (KarvCore) so the menu bar, app and widgets agree;
+                // rolling/estimated windows get a neutral tick instead of a false red one.
+                let weeklyElapsed = clampTick(item.secondaryWindow?.pace(at: now, isSecondary: true).elapsedFraction ?? 0)
                 let sessionUsed = item.primaryWindow.usedPercent
-                let sessionElapsed = elapsedFraction(
-                    resetsAt: item.primaryWindow.resetsAt,
-                    duration: sessionDuration,
-                    now: now
-                )
+                let sessionElapsed = clampTick(item.primaryWindow.pace(at: now, isSecondary: false).elapsedFraction)
 
                 drawRing(
                     letter: "W",
@@ -120,10 +110,8 @@ enum MenuBarRingRenderer {
         }
     }
 
-    private static func elapsedFraction(resetsAt: Date, duration: TimeInterval, now: Date) -> Double {
-        let remaining = resetsAt.timeIntervalSince(now)
-        let elapsed = duration - remaining
-        return min(max(elapsed / duration, 0.04), 0.96)
+    private static func clampTick(_ elapsed: Double) -> Double {
+        min(max(elapsed, 0.04), 0.96)
     }
 
     private static func drawRing(letter: String, used: Double, elapsed: Double, rect: CGRect) {
@@ -428,7 +416,7 @@ struct MenuBarPopoverView: View {
                                 .font(.system(size: 10, weight: .medium))
                                 .foregroundStyle(secondaryText)
                             Spacer()
-                            Text("Resets \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt))")
+                            Text("\(item.primaryWindow.resetVerb.capitalized) \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt))\(item.isEstimate ? " · est." : "")")
                                 .font(.system(size: 10, design: .monospaced))
                                 .foregroundStyle(secondaryText)
                         }

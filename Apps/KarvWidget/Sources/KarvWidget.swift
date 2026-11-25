@@ -382,12 +382,12 @@ struct KarvWidgetEntryView: View {
                                         .background(item.provider.accentColor.opacity(0.14), in: Capsule())
                                 }
 
-                                Text("S resets \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
+                                Text("S \(item.primaryWindow.resetVerb) \(KarvFormatting.countdownString(until: item.primaryWindow.resetsAt, from: entry.date))")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundStyle(.white.opacity(0.55))
 
                                 if let secondary = item.secondaryWindow {
-                                    Text("W resets \(KarvFormatting.countdownString(until: secondary.resetsAt, from: entry.date))")
+                                    Text("W \(secondary.resetVerb) \(KarvFormatting.countdownString(until: secondary.resetsAt, from: entry.date))")
                                         .font(.system(size: 11, design: .monospaced))
                                         .foregroundStyle(.white.opacity(0.42))
                                 }

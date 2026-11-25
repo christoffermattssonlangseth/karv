@@ -163,7 +163,8 @@ public final class KarvSyncStore {
             subtitle: item.primaryWindow.subtitle,
             usedPercent: primaryUsedPercent,
             resetsAt: item.primaryWindow.resetsAt,
-            detailText: item.primaryWindow.detailText
+            detailText: item.primaryWindow.detailText,
+            isRolling: item.primaryWindow.isRolling
         )
         if let sec = item.secondaryWindow, let secUsed = secondaryUsedPercent {
             item.secondaryWindow = QuotaWindow(
@@ -172,11 +173,13 @@ public final class KarvSyncStore {
                 subtitle: sec.subtitle,
                 usedPercent: secUsed,
                 resetsAt: sec.resetsAt,
-                detailText: sec.detailText
+                detailText: sec.detailText,
+                isRolling: sec.isRolling
             )
         }
         item.lastSyncedAt = Date()
         item.source = .manual
+        item.isEstimate = false
         updated.providers[index] = item
         updated.updatedAt = Date()
         publish(updated)
@@ -206,7 +209,8 @@ public final class KarvSyncStore {
             subtitle: item.primaryWindow.subtitle,
             usedPercent: primaryUsedPercent,
             resetsAt: primaryResetsAt ?? item.primaryWindow.resetsAt,
-            detailText: statusNote
+            detailText: statusNote,
+            isRolling: primaryResetsAt == nil && item.primaryWindow.isRolling
         )
         if let sec = item.secondaryWindow, let secUsed = secondaryUsedPercent {
             item.secondaryWindow = QuotaWindow(
@@ -215,11 +219,13 @@ public final class KarvSyncStore {
                 subtitle: sec.subtitle,
                 usedPercent: secUsed,
                 resetsAt: secondaryResetsAt ?? sec.resetsAt,
-                detailText: sec.detailText
+                detailText: sec.detailText,
+                isRolling: secondaryResetsAt == nil && sec.isRolling
             )
         }
         item.lastSyncedAt = now
         item.source = .webSession
+        item.isEstimate = false
         item.statusNote = statusNote
 
         if !item.history.isEmpty {

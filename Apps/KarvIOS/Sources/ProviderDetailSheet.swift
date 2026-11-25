@@ -134,7 +134,7 @@ struct ProviderDetailSheet: View {
                         .tracking(1.2)
                         .foregroundStyle(KarvTheme.textTertiary)
 
-                    Text("Resets in \(KarvFormatting.countdownString(until: snapshot.primaryWindow.resetsAt, from: now))")
+                    Text("\(snapshot.primaryWindow.resetVerb.capitalized) in \(KarvFormatting.countdownString(until: snapshot.primaryWindow.resetsAt, from: now))")
                         .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(snapshot.provider.accentColor)
                         .padding(.top, 4)
@@ -197,7 +197,7 @@ struct ProviderDetailSheet: View {
                             Text("\(KarvFormatting.percentString(window.usedPercent)) used")
                                 .font(.system(size: 13, weight: .semibold, design: .monospaced))
                                 .foregroundStyle(KarvTheme.textPrimary)
-                            Text("Resets in \(KarvFormatting.countdownString(until: window.resetsAt, from: now))")
+                            Text("\(window.resetVerb.capitalized) in \(KarvFormatting.countdownString(until: window.resetsAt, from: now))")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(KarvTheme.textTertiary)
                         }
@@ -211,7 +211,7 @@ struct ProviderDetailSheet: View {
                         height: 6
                     )
 
-                    PaceReserveDetail(window: window, isSecondary: index > 0, now: now)
+                    PaceReserveDetail(window: window, isSecondary: index > 0, isEstimate: snapshot.isEstimate, now: now)
                         .padding(.top, 4)
                 }
                 .padding(14)

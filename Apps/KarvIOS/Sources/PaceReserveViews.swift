@@ -27,8 +27,31 @@ struct PaceReserveLine: View {
     let now: Date
 
     var body: some View {
-        let pace = window.pace(at: now, isSecondary: isSecondary)
+        if window.isRolling {
+            rollingBody
+        } else {
+            pacedBody
+        }
+    }
+
+    /// Rolling windows have no reset to pace against; show when usage starts easing.
+    private var rollingBody: some View {
         HStack(spacing: 4) {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .font(.system(size: 9, weight: .bold))
+            Text(window.usedPercent > 0 && window.resetsAt > now
+                 ? "Rolling · frees up in \(KarvFormatting.durationString(window.resetsAt.timeIntervalSince(now)))"
+                 : "Rolling · no recent use")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(KarvTheme.textSecondary)
+    }
+
+    private var pacedBody: some View {
+        let pace = window.pace(at: now, isSecondary: isSecondary)
+        return HStack(spacing: 4) {
             Image(systemName: pace.state.symbol)
                 .font(.system(size: 9, weight: .bold))
             Text(text(for: pace))
@@ -69,11 +92,48 @@ struct PaceReserveLine: View {
 struct PaceReserveDetail: View {
     let window: QuotaWindow
     let isSecondary: Bool
+    var isEstimate: Bool = false
     let now: Date
 
     var body: some View {
+        if window.isRolling {
+            rollingBody
+        } else {
+            pacedBody
+        }
+    }
+
+    private var rollingBody: some View {
+        var parts: [String] = []
+        if isEstimate {
+            parts.append("Estimated from local prompt history against your budget, not the provider's real quota.")
+        }
+        if let detail = window.detailText {
+            parts.append(detail + ".")
+        }
+        parts.append("This is a rolling window: usage ages out continuously instead of resetting.")
+        if window.usedPercent > 0, window.resetsAt > now {
+            parts.append("The oldest counted prompt drops out in \(KarvFormatting.durationString(window.resetsAt.timeIntervalSince(now))).")
+        }
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 11, weight: .bold))
+                Text("\(KarvFormatting.percentString(window.remainingPercent)) headroom")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(KarvTheme.textPrimary)
+
+            Text(parts.joined(separator: " "))
+                .font(.system(size: 12))
+                .foregroundStyle(KarvTheme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var pacedBody: some View {
         let pace = window.pace(at: now, isSecondary: isSecondary)
-        VStack(alignment: .leading, spacing: 6) {
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Image(systemName: pace.state.symbol)
                     .font(.system(size: 11, weight: .bold))

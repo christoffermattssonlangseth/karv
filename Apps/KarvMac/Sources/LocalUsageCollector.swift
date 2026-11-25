@@ -128,6 +128,7 @@ struct LocalUsageCollector: Sendable {
         let recent5h: Int
         let recent7d: Int
         let oldestIn5h: Date?
+        var oldestIn7d: Date?
 
         if !timestamps.isEmpty {
             let in5h = timestamps.filter { $0 >= fiveHoursAgo }
@@ -135,6 +136,7 @@ struct LocalUsageCollector: Sendable {
             recent5h = in5h.count
             recent7d = in7d.count
             oldestIn5h = in5h.min()
+            oldestIn7d = in7d.min()
         } else {
             recent5h = countRecentJSONLEntries(in: projectsDir, since: fiveHoursAgo)
             recent7d = countRecentJSONLEntries(in: projectsDir, since: sevenDaysAgo)
@@ -155,20 +157,23 @@ struct LocalUsageCollector: Sendable {
                 subtitle: "Claude Code rolling 5h activity",
                 usedPercent: fiveHourUsed,
                 resetsAt: fiveHourReset,
-                detailText: "\(recent5h) prompts in last 5h"
+                detailText: "\(recent5h)/60 prompts in last 5h",
+                isRolling: true
             ),
             secondaryWindow: QuotaWindow(
                 id: "claude-weekly",
                 title: "Weekly Cap",
                 subtitle: "7-day rolling activity",
                 usedPercent: weeklyUsed,
-                resetsAt: now.addingTimeInterval(7 * 86400),
-                detailText: "\(recent7d) prompts in last 7d"
+                resetsAt: oldestIn7d?.addingTimeInterval(7 * 86400) ?? now.addingTimeInterval(7 * 86400),
+                detailText: "\(recent7d)/500 prompts in last 7d",
+                isRolling: true
             ),
             history: historyPoints,
             lastSyncedAt: now,
             source: .claudeCLI,
-            statusNote: "Local estimate from ~/.claude/history.jsonl"
+            statusNote: "Local estimate from ~/.claude/history.jsonl",
+            isEstimate: true
         )
     }
 
@@ -303,7 +308,8 @@ struct LocalUsageCollector: Sendable {
                 subtitle: "Codex CLI activity",
                 usedPercent: min(Double(recent5h) / 200.0, 1.0),
                 resetsAt: now.addingTimeInterval(5 * 3600),
-                detailText: "\(recent5h) events in last 5h"
+                detailText: "\(recent5h)/200 events in last 5h",
+                isRolling: true
             ),
             secondaryWindow: QuotaWindow(
                 id: "codex-weekly",
@@ -311,12 +317,14 @@ struct LocalUsageCollector: Sendable {
                 subtitle: "7-day rolling estimate",
                 usedPercent: min(Double(recent7d) / 1800.0, 1.0),
                 resetsAt: now.addingTimeInterval(7 * 86400),
-                detailText: "\(recent7d) events in last 7d"
+                detailText: "\(recent7d)/1800 events in last 7d",
+                isRolling: true
             ),
             history: dailyActivityHistory(in: sessionsDir, now: now, dailyScale: 240.0, prefix: "codex"),
             lastSyncedAt: now,
             source: .codexCLI,
-            statusNote: "Connected via ~/.codex"
+            statusNote: "Estimated from ~/.codex activity",
+            isEstimate: true
         )
     }
 
@@ -337,11 +345,15 @@ struct LocalUsageCollector: Sendable {
         let cliTmpDir = geminiDir.appendingPathComponent("tmp")
 
         let (recent5h, recent7d, historyPoints): (Int, Int, [UsageHistoryPoint])
+        var sessionRelief = now.addingTimeInterval(5 * 3600)
+        var weeklyRelief = now.addingTimeInterval(7 * 86400)
         if FileManager.default.fileExists(atPath: agBrainDir.path) {
             let turnDates = collectAntigravityTurnDates(in: agBrainDir, since: sevenDaysAgo)
             let in5h = turnDates.filter { $0 >= fiveHoursAgo }
             recent5h = in5h.count
             recent7d = turnDates.count
+            sessionRelief = Self.rollingRelief(in5h, window: 5 * 3600, now: now)
+            weeklyRelief = Self.rollingRelief(turnDates, window: 7 * 86400, now: now)
             historyPoints = bucketTimestampsByDay(turnDates, now: now, dailyScale: max(20.0, sessionBudget), prefix: "gemini")
         } else {
             recent5h = countRecentJSONLEntries(in: cliTmpDir, since: fiveHoursAgo)
@@ -350,13 +362,9 @@ struct LocalUsageCollector: Sendable {
         }
 
         let safeBudget = max(20.0, sessionBudget)
+        let weeklyBudget = safeBudget * 7.0
         let sessionUsed = min(Double(recent5h) / safeBudget, 1.0)
-        let weeklyUsed = min(Double(recent7d) / (safeBudget * 7.0), 1.0)
-        let nextMidnight = Calendar.current.nextDate(
-            after: now,
-            matching: DateComponents(hour: 0, minute: 0),
-            matchingPolicy: .nextTime
-        ) ?? now.addingTimeInterval(12 * 3600)
+        let weeklyUsed = min(Double(recent7d) / weeklyBudget, 1.0)
 
         return ProviderUsageSnapshot(
             provider: .gemini,
@@ -367,21 +375,24 @@ struct LocalUsageCollector: Sendable {
                 title: "5h Session",
                 subtitle: "Estimated local activity",
                 usedPercent: sessionUsed,
-                resetsAt: nextMidnight,
-                detailText: "\(recent5h) prompts in last 5h"
+                resetsAt: sessionRelief,
+                detailText: "\(recent5h)/\(Int(safeBudget)) prompts in last 5h",
+                isRolling: true
             ),
             secondaryWindow: QuotaWindow(
                 id: "gemini-weekly",
                 title: "Weekly Cap",
                 subtitle: "Estimated 7-day activity",
                 usedPercent: weeklyUsed,
-                resetsAt: now.addingTimeInterval(7 * 86400),
-                detailText: "\(recent7d) prompts in last 7d"
+                resetsAt: weeklyRelief,
+                detailText: "\(recent7d)/\(Int(weeklyBudget)) prompts in last 7d",
+                isRolling: true
             ),
             history: historyPoints,
             lastSyncedAt: now,
             source: .geminiCLI,
-            statusNote: "Estimated from ~/.gemini"
+            statusNote: "Estimated from ~/.gemini",
+            isEstimate: true
         )
     }
 
@@ -429,6 +440,13 @@ struct LocalUsageCollector: Sendable {
     }
 
     // MARK: - Helpers
+
+    /// For a rolling window: when the oldest counted event ages out, i.e. the next time
+    /// usage drops. Falls back to a full window from now when nothing is counted.
+    static func rollingRelief(_ dates: [Date], window: TimeInterval, now: Date) -> Date {
+        dates.filter { $0 >= now.addingTimeInterval(-window) }.min()?.addingTimeInterval(window)
+            ?? now.addingTimeInterval(window)
+    }
 
     private func disconnectedSnapshot(provider: AIProvider, now: Date, note: String) -> ProviderUsageSnapshot {
         ProviderUsageSnapshot(
