@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 import AppKit
 import CoreImage.CIFilterBuiltins
@@ -303,6 +304,12 @@ final class MacSyncCoordinator {
             lastLiveClaude = Self.realReading(.claude, in: merged) ?? lastLiveClaude
             shareClaudeTokenIfChanged()
             bonjourServer.update(snapshot: merged)
+            do {
+                try LocalQuotaExport.write(merged)
+            } catch {
+                Logger(subsystem: "com.cml.karv", category: "quota-export")
+                    .error("Could not publish the local quota snapshot: \(error.localizedDescription, privacy: .private)")
+            }
             KarvNotificationScheduler.scheduleAlerts(for: merged, preferences: store.preferences)
             isSyncing = false
         }
@@ -815,5 +822,56 @@ struct MacWindowBlock: View {
         .padding(9)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+
+/// A local, versioned quota feed for other apps running as this macOS user.
+private enum LocalQuotaExport {
+    struct Snapshot: Encodable {
+        let version = 1
+        let providers: [Provider]
+    }
+
+    struct Provider: Encodable {
+        let id: String
+        let estimated: Bool
+        let observedAtMs: Int64
+        let windows: [Window]
+
+        init(_ usage: ProviderUsageSnapshot) {
+            id = usage.provider.rawValue
+            estimated = usage.isEstimate
+            observedAtMs = Int64(usage.lastSyncedAt.timeIntervalSince1970 * 1000)
+            windows = ([usage.primaryWindow] + [usage.secondaryWindow].compactMap { $0 }).map(Window.init)
+        }
+    }
+
+    struct Window: Encodable {
+        let title: String
+        let usedFraction: Double
+        let resetsAtMs: Int64
+        let rolling: Bool
+
+        init(_ quota: QuotaWindow) {
+            title = quota.title
+            usedFraction = quota.usedPercent
+            resetsAtMs = Int64(quota.resetsAt.timeIntervalSince1970 * 1000)
+            rolling = quota.isRolling
+        }
+    }
+
+    static func write(_ snapshot: KarvSnapshot) throws {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Karv/Usage", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        let providers = snapshot.isDemoData ? [] : snapshot.providers.filter(\.isConnected).map(Provider.init)
+        try encoder.encode(Snapshot(providers: providers))
+            .write(to: directory.appendingPathComponent("snapshot-v1.json"), options: .atomic)
     }
 }

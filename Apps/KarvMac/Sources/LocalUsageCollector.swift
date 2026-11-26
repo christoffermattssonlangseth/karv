@@ -1,6 +1,6 @@
 import Foundation
-import Security
 import KarvCore
+import Synchronization
 
 /// Scans local CLI directories (~/.claude, ~/.codex, ~/.gemini) and local Claude Code OAuth
 /// on macOS to build a KarvSnapshot suitable for syncing to iPhone via iCloud.
@@ -73,6 +73,9 @@ struct LocalUsageCollector: Sendable {
             nil
         }
         Self.writeClaudeDiagnostics(outcome: outcome, now: now)
+        if case .unauthorized? = outcome {
+            Self.invalidateClaudeCredential()
+        }
         if let live = outcome?.result {
             var updatedHistory = historyPoints
             if !updatedHistory.isEmpty {
@@ -185,17 +188,54 @@ struct LocalUsageCollector: Sendable {
         readClaudeCredentialData().flatMap(extractAccessToken(from:))
     }
 
-    private func readClaudeCredentialData() -> Data? {
-        // 1. Check macOS Keychain ("Claude Code-credentials")
-        let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: "Claude Code-credentials",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne
-        ]
-        var result: AnyObject?
-        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-           let data = result as? Data,
+    /// Claude Code's credentials, cached in memory: they are only read again when the
+    /// token is about to expire or the API rejected it, at most once every 5 minutes.
+    private func readClaudeCredentialData(now: Date = Date()) -> Data? {
+        Self.credentialCache.withLock { cache in
+            if let data = cache.data, cache.isUsable(now: now) {
+                return data
+            }
+            // Needs a fresh read, but not more often than every 5 minutes.
+            if now.timeIntervalSince(cache.readAt) < Self.minimumReread {
+                return cache.data
+            }
+            let data = readClaudeCredentialDataUncached()
+            cache = CredentialCache(data: data, expiresAt: data.flatMap(Self.expiry(from:)), readAt: now)
+            return data
+        }
+    }
+
+    /// Call after the API answers 401: Claude Code has probably refreshed the token.
+    static func invalidateClaudeCredential() {
+        credentialCache.withLock { $0.expiresAt = .distantPast }
+    }
+
+    private struct CredentialCache {
+        var data: Data?
+        var expiresAt: Date?
+        var readAt: Date = .distantPast
+
+        func isUsable(now: Date) -> Bool {
+            if let expiresAt { return expiresAt.timeIntervalSince(now) > 120 }
+            return now.timeIntervalSince(readAt) < 30 * 60
+        }
+    }
+
+    private static let credentialCache = Mutex(CredentialCache())
+    private static let minimumReread: TimeInterval = 5 * 60
+
+    private static func expiry(from data: Data) -> Date? {
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        let oauth = (json["claudeAiOauth"] as? [String: Any]) ?? json
+        return (oauth["expiresAt"] as? Double).map { Date(timeIntervalSince1970: $0 / 1000) }
+    }
+
+    private func readClaudeCredentialDataUncached() -> Data? {
+        // 1. macOS Keychain ("Claude Code-credentials"), read through /usr/bin/security.
+        //    Claude Code writes the item with that tool, so macOS lets it read the item
+        //    back without a prompt, while KarvMac's own access is forgotten every time
+        //    Claude Code refreshes its token.
+        if let data = Self.readKeychainViaSecurityTool(service: "Claude Code-credentials"),
            extractAccessToken(from: data) != nil {
             return data
         }
@@ -207,6 +247,25 @@ struct LocalUsageCollector: Sendable {
             return data
         }
         return nil
+    }
+
+    private static func readKeychainViaSecurityTool(service: String) -> Data? {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        process.arguments = ["find-generic-password", "-s", service, "-w"]
+        let output = Pipe()
+        process.standardOutput = output
+        process.standardError = FileHandle.nullDevice
+        do {
+            try process.run()
+        } catch {
+            return nil
+        }
+        let data = output.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { return nil }
+        let trimmed = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : Data(trimmed.utf8)
     }
 
     private func extractAccessToken(from data: Data) -> String? {
@@ -291,7 +350,7 @@ struct LocalUsageCollector: Sendable {
                     detailText: "Read from Codex session telemetry"
                 ),
                 history: dailyActivityHistory(in: sessionsDir, now: now, dailyScale: 240.0, prefix: "codex"),
-                lastSyncedAt: now,
+                lastSyncedAt: parsed.observedAt,
                 source: .codexCLI,
                 statusNote: "Live rate limits from ~/.codex/sessions"
             )
@@ -502,6 +561,7 @@ struct LocalUsageCollector: Sendable {
     }
 
     private struct ParsedCodexRateLimits {
+        let observedAt: Date
         let primaryUsedPercent: Double
         let primaryResetsAt: Date
         let secondaryUsedPercent: Double
@@ -543,7 +603,12 @@ struct LocalUsageCollector: Sendable {
                     let sUsed = (secondary?["used_percent"] as? Double) ?? 0
                     let sReset = (secondary?["resets_at"] as? Double).map { Date(timeIntervalSince1970: $0) } ?? now.addingTimeInterval(7 * 86400)
 
+                    let timestamp = (json["timestamp"] as? String).flatMap { value in
+                        (try? Date.ISO8601FormatStyle(includingFractionalSeconds: true).parse(value))
+                            ?? (try? Date.ISO8601FormatStyle().parse(value))
+                    }
                     return ParsedCodexRateLimits(
+                        observedAt: min(timestamp ?? candidate.modified, now),
                         primaryUsedPercent: min(max(pUsed / 100.0, 0), 1),
                         primaryResetsAt: pReset,
                         secondaryUsedPercent: min(max(sUsed / 100.0, 0), 1),
